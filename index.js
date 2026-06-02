@@ -22,6 +22,9 @@ function loadConfig() {
       welcomeMessage: 'We hope you enjoy your stay.',
       rulesChannelId: null, mmRequestChannelId: null,
       savedEmbeds: {},
+      nayCommandName: 'nay',
+      autoRoleId: null,
+      backups: {},
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(d, null, 2));
     return d;
@@ -43,6 +46,9 @@ function loadConfig() {
   if (!cfg.rulesChannelId) cfg.rulesChannelId = null;
   if (!cfg.mmRequestChannelId) cfg.mmRequestChannelId = null;
   if (!cfg.savedEmbeds) cfg.savedEmbeds = {};
+  if (!cfg.nayCommandName) cfg.nayCommandName = 'nay';
+  if (!cfg.autoRoleId) cfg.autoRoleId = null;
+  if (!cfg.backups) cfg.backups = {};
   return cfg;
 }
 function saveConfig(cfg) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); }
@@ -124,11 +130,13 @@ const slashCommands = [
   new SlashCommandBuilder().setName('setcategory').setDescription('Set ticket category').addChannelOption(o => o.setName('category').setDescription('Category').setRequired(true)),
   new SlashCommandBuilder().setName('setprefix').setDescription('Change the bot prefix').addStringOption(o => o.setName('prefix').setDescription('New prefix').setRequired(true)),
   new SlashCommandBuilder().setName('setpicture').setDescription('Set image on all panels/nay messages').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
-  new SlashCommandBuilder().setName('setrole').setDescription('Set minimum role to use $nay').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)),
+  new SlashCommandBuilder().setName('setrole').setDescription('Set minimum role to use the offer command').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)),
   new SlashCommandBuilder().setName('setnayrole').setDescription('Set role given on Accept').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)),
   new SlashCommandBuilder().setName('setnaymessage').setDescription('Set offer message (one time)').addStringOption(o => o.setName('message').setDescription('Message').setRequired(true)),
   new SlashCommandBuilder().setName('resetnaymessage').setDescription('Reset offer message so it can be changed'),
+  new SlashCommandBuilder().setName('setnayname').setDescription('Rename the offer command (e.g. fay, offer, deal)').addStringOption(o => o.setName('name').setDescription('New command name (no spaces, lowercase)').setRequired(true)),
   new SlashCommandBuilder().setName('nay').setDescription('Send offer to a user').addUserOption(o => o.setName('user').setDescription('User').setRequired(true)),
+  new SlashCommandBuilder().setName('embeds').setDescription('Manage your saved embeds'),
   new SlashCommandBuilder().setName('close').setDescription('Close this ticket'),
   new SlashCommandBuilder().setName('claim').setDescription('Claim this ticket'),
   new SlashCommandBuilder().setName('unclaim').setDescription('Unclaim this ticket'),
@@ -180,6 +188,12 @@ const slashCommands = [
   new SlashCommandBuilder().setName('togglewelcome').setDescription('Enable or disable welcome messages'),
   new SlashCommandBuilder().setName('welcomeconfig').setDescription('View current welcome configuration'),
   new SlashCommandBuilder().setName('testwelcome').setDescription('Send a test welcome message for yourself'),
+  new SlashCommandBuilder().setName('setautorole').setDescription('Set a role to auto-give when someone joins').addRoleOption(o => o.setName('role').setDescription('Role to give on join').setRequired(true)),
+  new SlashCommandBuilder().setName('removeautorole').setDescription('Disable the auto-role on join'),
+  new SlashCommandBuilder().setName('backup').setDescription('Backup the server config and roles').addStringOption(o => o.setName('name').setDescription('Backup name').setRequired(true)),
+  new SlashCommandBuilder().setName('restore').setDescription('Restore a backup').addStringOption(o => o.setName('name').setDescription('Backup name').setRequired(true)),
+  new SlashCommandBuilder().setName('backuplist').setDescription('List all saved backups'),
+  new SlashCommandBuilder().setName('backupdelete').setDescription('Delete a backup').addStringOption(o => o.setName('name').setDescription('Backup name').setRequired(true)),
 ];
 
 async function registerSlashCommands() {
@@ -197,10 +211,20 @@ client.once('ready', async () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// WELCOME ON MEMBER JOIN
+// AUTO ROLE ON JOIN
 // ─────────────────────────────────────────────────────────────
 client.on('guildMemberAdd', async (member) => {
   config = loadConfig();
+
+  // Auto role
+  if (config.autoRoleId) {
+    const role = member.guild.roles.cache.get(config.autoRoleId);
+    if (role) {
+      try { await member.roles.add(role); } catch (e) { console.error('Auto-role failed:', e); }
+    }
+  }
+
+  // Welcome message
   if (!config.welcomeEnabled || !config.welcomeChannelId) return;
   const channel = member.guild.channels.cache.get(config.welcomeChannelId);
   if (!channel) return;
@@ -239,11 +263,16 @@ client.on('messageCreate', async (message) => {
   const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
   const command = args.shift().toLowerCase();
   const ctx = { message, args, guild: message.guild, member: message.member, channel: message.channel, isSlash: false };
+
+  // Dynamic nay command name
+  const nayName = (config.nayCommandName || 'nay').toLowerCase();
+
   const cmds = {
     help: runHelp, panel: runPanel, setmmrole: runSetMMRole, setcategory: runSetCategory,
     setprefix: runSetPrefix, setpicture: runSetPicture, setrole: runSetRole,
     setnayrole: runSetNayRole, setnaymessage: runSetNayMessage,
-    resetnaymessage: runResetNayMessage, nay: runNay,
+    resetnaymessage: runResetNayMessage, setnayname: runSetNayName,
+    [nayName]: runNay,
     close: runClose, claim: runClaim, unclaim: runUnclaim, transcript: runTranscript,
     add: runAdd, remove: runRemove, rename: runRename, transfer: runTransfer,
     mminfo: runMmInfo, mmfee: runMmFee, confirm: runConfirm,
@@ -253,7 +282,7 @@ client.on('messageCreate', async (message) => {
     warn: runWarn, warnings: runWarnings, clearwarnings: runClearWarnings,
     purge: runPurge, lock: runLock, unlock: runUnlock, slowmode: runSlowmode,
     announce: runAnnounce, poll: runPoll, giveaway: runGiveaway,
-    role: runRole, embed: runEmbed,
+    role: runRole, embed: runEmbed, embeds: runEmbeds,
     serverinfo: runServerInfo, userinfo: runUserInfo, whois: runUserInfo, w: runUserInfo,
     avatar: runAvatar, av: runAvatar, pfp: runAvatar, banner: runBanner,
     membercount: runMemberCount, ping: runPing, uptime: runUptime, botinfo: runBotInfo,
@@ -262,6 +291,8 @@ client.on('messageCreate', async (message) => {
     setmmrequestchannel: runSetMMRequestChannel, setwelcometitle: runSetWelcomeTitle,
     setwelcomemessage: runSetWelcomeMessageCmd, togglewelcome: runToggleWelcome,
     welcomeconfig: runWelcomeConfig, testwelcome: runTestWelcome,
+    setautorole: runSetAutoRole, removeautorole: runRemoveAutoRole,
+    backup: runBackup, restore: runRestore, backuplist: runBackupList, backupdelete: runBackupDelete,
   };
   if (cmds[command]) cmds[command](ctx);
 });
@@ -287,7 +318,9 @@ client.on('interactionCreate', async (interaction) => {
       help: runHelp, panel: runPanel, setmmrole: runSetMMRole, setcategory: runSetCategory,
       setprefix: runSetPrefix, setpicture: runSetPicture, setrole: runSetRole,
       setnayrole: runSetNayRole, setnaymessage: runSetNayMessage,
-      resetnaymessage: runResetNayMessage, nay: runNay,
+      resetnaymessage: runResetNayMessage, setnayname: runSetNayName,
+      nay: runNay,
+      embeds: runEmbeds,
       close: runClose, claim: runClaim, unclaim: runUnclaim, transcript: runTranscript,
       add: runAdd, remove: runRemove, rename: runRename, transfer: runTransfer,
       mminfo: runMmInfo, mmfee: runMmFee, confirm: runConfirm,
@@ -306,6 +339,8 @@ client.on('interactionCreate', async (interaction) => {
       setmmrequestchannel: runSetMMRequestChannel, setwelcometitle: runSetWelcomeTitle,
       setwelcomemessage: runSetWelcomeMessageCmd, togglewelcome: runToggleWelcome,
       welcomeconfig: runWelcomeConfig, testwelcome: runTestWelcome,
+      setautorole: runSetAutoRole, removeautorole: runRemoveAutoRole,
+      backup: runBackup, restore: runRestore, backuplist: runBackupList, backupdelete: runBackupDelete,
     };
     if (cmds[interaction.commandName]) cmds[interaction.commandName](ctx);
     return;
@@ -336,6 +371,15 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
+  // ── Saved embeds select menu ──
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('embeds_select_')) {
+    const userId = interaction.customId.replace('embeds_select_', '');
+    if (interaction.user.id !== userId) return interaction.reply({ content: '❌ Not your menu.', ephemeral: true });
+    const name = interaction.values[0];
+    embedSessions[`pick_${userId}`] = name;
+    return interaction.update({ content: `📌 Selected: **${name}**\nClick a button below to act on it.`, components: embedsActionRows(userId, name) });
+  }
+
   // ── Help section buttons ──
   if (interaction.isButton() && interaction.customId.startsWith('help_')) {
     const section = interaction.customId.replace('help_', '');
@@ -350,6 +394,11 @@ client.on('interactionCreate', async (interaction) => {
   // ── Embed builder modals ──
   if (interaction.isModalSubmit() && interaction.customId.startsWith('ebm_')) {
     return handleEmbedBuilderModal(interaction);
+  }
+
+  // ── Saved embeds action buttons ──
+  if (interaction.isButton() && interaction.customId.startsWith('emb_')) {
+    return handleEmbedsAction(interaction);
   }
 
   // ── Ticket modals ──
@@ -406,11 +455,127 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// SAVED EMBEDS MENU
+// ─────────────────────────────────────────────────────────────
+function embedsActionRows(userId, selectedName) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`emb_send_${userId}`).setLabel('Send').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`emb_edit_${userId}`).setLabel('Edit').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`emb_delete_${userId}`).setLabel('Delete').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`emb_createnew_${userId}`).setLabel('Create New').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`emb_close_${userId}`).setLabel('Close').setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+}
+
+async function runEmbeds(ctx) {
+  if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need **Manage Server** permission.' });
+  config = loadConfig();
+  const userId = ctx.isSlash ? ctx.interaction.user.id : ctx.message.author.id;
+  const saved = config.savedEmbeds || {};
+  const names = Object.keys(saved);
+
+  const embed = new EmbedBuilder()
+    .setColor(0xf5a623)
+    .setTitle('saved embeds')
+    .setDescription(
+      '─────────────────────────\n' +
+      (names.length === 0
+        ? '*No saved embeds yet.*'
+        : names.map(n => `\`${n}\` — ${saved[n].title || '*untitled*'}`).join('\n')) +
+      '\n─────────────────────────\n— select one below, or click Create New'
+    );
+
+  const components = [];
+
+  if (names.length > 0) {
+    const options = names.slice(0, 25).map(n => ({
+      label: n,
+      description: saved[n].title ? saved[n].title.slice(0, 50) : 'untitled',
+      value: n,
+    }));
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`embeds_select_${userId}`)
+          .setPlaceholder('select an embed...')
+          .addOptions(options)
+      )
+    );
+  }
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`emb_createnew_${userId}`).setLabel('Create New').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`emb_close_${userId}`).setLabel('Close').setStyle(ButtonStyle.Secondary),
+    )
+  );
+
+  await reply(ctx, { embeds: [embed], components });
+}
+
+async function handleEmbedsAction(interaction) {
+  const withoutPrefix = interaction.customId.slice(4);
+  const underscoreIdx = withoutPrefix.indexOf('_');
+  const action = withoutPrefix.slice(0, underscoreIdx);
+  const userId = withoutPrefix.slice(underscoreIdx + 1);
+
+  if (interaction.user.id !== userId) return interaction.reply({ content: '❌ Not your menu.', ephemeral: true });
+
+  config = loadConfig();
+  const selectedName = embedSessions[`pick_${userId}`];
+
+  if (action === 'close') {
+    delete embedSessions[`pick_${userId}`];
+    return interaction.update({ content: '✅ Closed.', embeds: [], components: [] });
+  }
+
+  if (action === 'createnew') {
+    delete embedSessions[`pick_${userId}`];
+    embedSessions[userId] = { title: null, description: null, color: 0xf5a623, author: null, authorIcon: null, footer: null, footerIcon: null, image: null, thumbnail: null, fields: [] };
+    const previewEmbed = new EmbedBuilder().setColor(0xf5a623).setTitle('New Embed').setDescription('Click the buttons below to customize this embed.');
+    return interaction.update({
+      content: '🛠️ **Embed Builder** — click the buttons below to build your embed',
+      embeds: [previewEmbed],
+      components: embedBuilderRows(userId),
+    });
+  }
+
+  if (!selectedName) return interaction.reply({ content: '❌ Please select an embed first.', ephemeral: true });
+  const savedSession = config.savedEmbeds[selectedName];
+  if (!savedSession) return interaction.reply({ content: '❌ Embed not found.', ephemeral: true });
+
+  if (action === 'send') {
+    const built = buildEmbedFromSession(savedSession);
+    await interaction.channel.send({ embeds: [built] });
+    return interaction.update({ content: `✅ Sent embed **${selectedName}**!`, embeds: [], components: [] });
+  }
+
+  if (action === 'edit') {
+    embedSessions[userId] = JSON.parse(JSON.stringify(savedSession));
+    embedSessions[`editing_${userId}`] = selectedName;
+    const built = buildEmbedFromSession(embedSessions[userId]);
+    return interaction.update({
+      content: `🛠️ **Editing: ${selectedName}** — make your changes and click Save Only to update`,
+      embeds: [built],
+      components: embedBuilderRows(userId),
+    });
+  }
+
+  if (action === 'delete') {
+    delete config.savedEmbeds[selectedName];
+    saveConfig(config);
+    delete embedSessions[`pick_${userId}`];
+    return interaction.update({ content: `🗑️ Deleted embed **${selectedName}**.`, embeds: [], components: [] });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // EMBED BUILDER — BUTTON HANDLER
 // ─────────────────────────────────────────────────────────────
 async function handleEmbedBuilderButton(interaction) {
-  // customId format: eb_action_userId
-  const withoutPrefix = interaction.customId.slice(3); // remove "eb_"
+  const withoutPrefix = interaction.customId.slice(3);
   const underscoreIdx = withoutPrefix.indexOf('_');
   const action = withoutPrefix.slice(0, underscoreIdx);
   const userId = withoutPrefix.slice(underscoreIdx + 1);
@@ -423,17 +588,36 @@ async function handleEmbedBuilderButton(interaction) {
 
   if (action === 'cancel') {
     delete embedSessions[userId];
+    delete embedSessions[`editing_${userId}`];
     return interaction.update({ content: '❌ Embed builder cancelled.', embeds: [], components: [] });
   }
 
   if (action === 'send') {
     const built = buildEmbedFromSession(session);
     await interaction.channel.send({ embeds: [built] });
+    // If editing a saved embed, update it too
+    const editingName = embedSessions[`editing_${userId}`];
+    if (editingName) {
+      config = loadConfig();
+      config.savedEmbeds[editingName] = JSON.parse(JSON.stringify(session));
+      saveConfig(config);
+      delete embedSessions[`editing_${userId}`];
+    }
     delete embedSessions[userId];
     return interaction.update({ content: '✅ Embed sent!', embeds: [], components: [] });
   }
 
   if (action === 'save') {
+    const editingName = embedSessions[`editing_${userId}`];
+    if (editingName) {
+      // Saving an edit to existing embed — skip name modal, just save
+      config = loadConfig();
+      config.savedEmbeds[editingName] = JSON.parse(JSON.stringify(session));
+      saveConfig(config);
+      delete embedSessions[userId];
+      delete embedSessions[`editing_${userId}`];
+      return interaction.update({ content: `✅ Embed **${editingName}** updated!`, embeds: [], components: [] });
+    }
     const modal = new ModalBuilder().setCustomId(`ebm_savename_${userId}`).setTitle('Save Embed');
     modal.addComponents(
       new ActionRowBuilder().addComponents(
@@ -452,7 +636,6 @@ async function handleEmbedBuilderButton(interaction) {
     return interaction.update({ embeds: [built], components: embedBuilderRows(userId) });
   }
 
-  // All other actions open a modal
   const modalDefs = {
     title:      { id: `ebm_title_${userId}`,      title: 'Set Title',       fields: [{ id: 'val', label: 'Title text', style: TextInputStyle.Short, value: session.title }] },
     description:{ id: `ebm_description_${userId}`,title: 'Set Description', fields: [{ id: 'val', label: 'Description', style: TextInputStyle.Paragraph, value: session.description }] },
@@ -489,8 +672,7 @@ async function handleEmbedBuilderButton(interaction) {
 // EMBED BUILDER — MODAL HANDLER
 // ─────────────────────────────────────────────────────────────
 async function handleEmbedBuilderModal(interaction) {
-  // customId format: ebm_action_userId
-  const withoutPrefix = interaction.customId.slice(4); // remove "ebm_"
+  const withoutPrefix = interaction.customId.slice(4);
   const underscoreIdx = withoutPrefix.indexOf('_');
   const action = withoutPrefix.slice(0, underscoreIdx);
   const userId = withoutPrefix.slice(underscoreIdx + 1);
@@ -554,6 +736,7 @@ async function handleEmbedBuilderModal(interaction) {
 // ─────────────────────────────────────────────────────────────
 async function showHelpSection(interaction, section) {
   const P = config.prefix;
+  const nayName = config.nayCommandName || 'nay';
 
   if (section === 'back') {
     return interaction.update({ embeds: [buildHelpMenuEmbed()], components: buildHelpMenuRows() });
@@ -588,17 +771,18 @@ async function showHelpSection(interaction, section) {
       ],
     },
     nay: {
-      emoji: '🎁', name: 'Nay / Offer System', color: 0xff6b9d,
+      emoji: '🎁', name: 'Offer System', color: 0xff6b9d,
       commands: [
-        { name: `${P}nay @user / /nay`, desc: 'Send the offer message to a user with Accept/Decline buttons' },
-        { name: `${P}setrole @role`, desc: 'Set the minimum role required to use $nay' },
+        { name: `${P}${nayName} @user / /nay`, desc: 'Send the offer message to a user with Accept/Decline buttons' },
+        { name: `${P}setnayname <name>`, desc: `Rename the offer command (currently: ${nayName})` },
+        { name: `${P}setrole @role`, desc: 'Set the minimum role required to use the offer command' },
         { name: `${P}setnayrole @role`, desc: 'Set the role given when a user accepts' },
         { name: `${P}setnaymessage <msg>`, desc: 'Set the offer message content (one-time lock)' },
         { name: `${P}resetnaymessage`, desc: 'Reset the offer message so it can be changed again' },
       ],
     },
     welcome: {
-      emoji: '👋', name: 'Welcome System', color: 0x57f287,
+      emoji: '👋', name: 'Welcome & Auto-Role', color: 0x57f287,
       commands: [
         { name: `${P}setwelcomechannel #ch`, desc: 'Set where welcome messages are sent' },
         { name: `${P}setruleschannel #ch`, desc: 'Set the rules channel linked in welcome messages' },
@@ -608,6 +792,8 @@ async function showHelpSection(interaction, section) {
         { name: `${P}togglewelcome`, desc: 'Enable or disable the welcome system' },
         { name: `${P}welcomeconfig`, desc: 'View all current welcome settings' },
         { name: `${P}testwelcome`, desc: 'Send a test welcome message as yourself' },
+        { name: `${P}setautorole @role`, desc: 'Auto-give a role to every new member who joins' },
+        { name: `${P}removeautorole`, desc: 'Disable auto-role on join' },
       ],
     },
     moderation: {
@@ -633,6 +819,7 @@ async function showHelpSection(interaction, section) {
         { name: `${P}poll <question>`, desc: 'Create a yes/no poll with reaction voting' },
         { name: `${P}announce [title] <msg>`, desc: 'Post a formatted announcement embed' },
         { name: `${P}embed / /embed`, desc: 'Open the interactive embed builder' },
+        { name: `${P}embeds / /embeds`, desc: 'Manage your saved embeds (send, edit, delete)' },
         { name: `${P}role @user @role`, desc: 'Toggle a role on a user (add or remove)' },
         { name: `${P}nickname @user [name]`, desc: "Set or reset a user's nickname" },
         { name: `${P}fill`, desc: 'Give yourself all roles below your highest role' },
@@ -659,6 +846,10 @@ async function showHelpSection(interaction, section) {
         { name: `${P}setcategory #category`, desc: 'Set the category where ticket channels are created' },
         { name: `${P}setprefix <char>`, desc: 'Change the bot prefix (default: $)' },
         { name: `${P}setpicture [attachment]`, desc: 'Set a global image on all panels and nay messages' },
+        { name: `${P}backup <name>`, desc: 'Backup server roles and bot config' },
+        { name: `${P}restore <name>`, desc: 'Restore a previous backup' },
+        { name: `${P}backuplist`, desc: 'List all saved backups' },
+        { name: `${P}backupdelete <name>`, desc: 'Delete a saved backup' },
       ],
     },
   };
@@ -687,12 +878,12 @@ function buildHelpMenuEmbed() {
     .addFields(
       { name: '🎫 Tickets', value: 'Ticket creation, management & transcripts', inline: true },
       { name: '🤝 Middleman', value: 'MM service, vouches & vacation', inline: true },
-      { name: '🎁 Nay System', value: 'Offer system with Accept/Decline', inline: true },
-      { name: '👋 Welcome', value: 'Auto-welcome on member join', inline: true },
+      { name: '🎁 Offer System', value: 'Offer system with Accept/Decline', inline: true },
+      { name: '👋 Welcome & Auto-Role', value: 'Auto-welcome & auto-role on join', inline: true },
       { name: '🔨 Moderation', value: 'Ban, kick, mute, warn & more', inline: true },
       { name: '🎉 Fun & Utility', value: 'Giveaways, polls, embeds & more', inline: true },
       { name: '🛠️ Info', value: 'Server, user & bot information', inline: true },
-      { name: '⚙️ Setup', value: 'Configure the bot for your server', inline: true },
+      { name: '⚙️ Setup', value: 'Configure the bot & backups', inline: true },
     )
     .setFooter({ text: 'Select a category below to see detailed commands' });
 }
@@ -702,7 +893,7 @@ function buildHelpMenuRows() {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('help_tickets').setLabel('🎫 Tickets').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('help_middleman').setLabel('🤝 Middleman').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('help_nay').setLabel('🎁 Nay System').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('help_nay').setLabel('🎁 Offer System').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('help_welcome').setLabel('👋 Welcome').setStyle(ButtonStyle.Primary),
     ),
     new ActionRowBuilder().addComponents(
@@ -814,6 +1005,180 @@ async function runSetPicture(ctx) {
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Image updated on **${updated}** message(s).`)] });
 }
 
+// ── Auto Role ──
+async function runSetAutoRole(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
+  if (!role) return reply(ctx, { content: '❌ Please mention a role.' });
+  config.autoRoleId = role.id; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Auto-role set to **${role.name}**. New members will automatically receive this role.`)] });
+}
+async function runRemoveAutoRole(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  config.autoRoleId = null; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(0xed4245).setDescription('✅ Auto-role disabled. New members will no longer receive a role automatically.')] });
+}
+
+// ── Backup & Restore ──
+async function runBackup(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const name = ctx.isSlash ? ctx.getOption('name') : ctx.args[0];
+  if (!name) return reply(ctx, { content: '❌ Please provide a backup name.' });
+
+  config = loadConfig();
+  const guild = ctx.guild;
+
+  // Fetch all roles
+  const roles = guild.roles.cache
+    .filter(r => !r.managed && r.id !== guild.id)
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      color: r.color,
+      hoist: r.hoist,
+      mentionable: r.mentionable,
+      permissions: r.permissions.bitfield.toString(),
+      position: r.position,
+    }))
+    .sort((a, b) => a.position - b.position);
+
+  // Fetch all channels
+  const channels = guild.channels.cache.map(c => ({
+    id: c.id,
+    name: c.name,
+    type: c.type,
+    parentId: c.parentId || null,
+    position: c.position,
+  }));
+
+  // Save bot config snapshot
+  const configSnapshot = JSON.parse(JSON.stringify(config));
+  delete configSnapshot.backups; // don't nest backups inside backups
+
+  config.backups[name] = {
+    createdAt: new Date().toISOString(),
+    guildName: guild.name,
+    roles,
+    channels,
+    botConfig: configSnapshot,
+  };
+  saveConfig(config);
+
+  await reply(ctx, {
+    embeds: [new EmbedBuilder()
+      .setColor(0x57f287)
+      .setTitle('✅ Backup Created')
+      .addFields(
+        { name: '📦 Name', value: name, inline: true },
+        { name: '🎭 Roles saved', value: `${roles.length}`, inline: true },
+        { name: '📁 Channels saved', value: `${channels.length}`, inline: true },
+        { name: '📅 Created', value: new Date().toLocaleString(), inline: true },
+      )
+      .setFooter({ text: 'Use $restore <name> to restore this backup' })
+    ]
+  });
+}
+
+async function runRestore(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const name = ctx.isSlash ? ctx.getOption('name') : ctx.args[0];
+  if (!name) return reply(ctx, { content: '❌ Please provide a backup name.' });
+
+  config = loadConfig();
+  const backup = config.backups[name];
+  if (!backup) return reply(ctx, { content: `❌ No backup found with name **${name}**. Use \`$backuplist\` to see all backups.` });
+
+  if (ctx.isSlash) await ctx.interaction.reply({ content: '⏳ Restoring backup... this may take a moment.', ephemeral: false });
+  else await ctx.message.reply('⏳ Restoring backup... this may take a moment.');
+
+  const guild = ctx.guild;
+  let rolesRestored = 0, rolesFailed = 0;
+
+  // Restore bot config
+  const restoredCfg = backup.botConfig;
+  restoredCfg.backups = config.backups; // keep existing backups
+  saveConfig(restoredCfg);
+  config = restoredCfg;
+
+  // Restore roles that don't exist
+  for (const roleData of backup.roles) {
+    const existing = guild.roles.cache.get(roleData.id);
+    if (existing) {
+      // Role still exists — try to update it
+      try {
+        await existing.edit({
+          name: roleData.name,
+          color: roleData.color,
+          hoist: roleData.hoist,
+          mentionable: roleData.mentionable,
+          permissions: BigInt(roleData.permissions),
+        });
+        rolesRestored++;
+      } catch (e) { rolesFailed++; }
+    } else {
+      // Role was deleted — recreate it
+      try {
+        await guild.roles.create({
+          name: roleData.name,
+          color: roleData.color,
+          hoist: roleData.hoist,
+          mentionable: roleData.mentionable,
+          permissions: BigInt(roleData.permissions),
+          reason: `Restored from backup: ${name}`,
+        });
+        rolesRestored++;
+      } catch (e) { rolesFailed++; }
+    }
+    await new Promise(r => setTimeout(r, 200)); // rate limit safety
+  }
+
+  const channel = ctx.isSlash ? ctx.interaction.channel : ctx.channel;
+  await channel.send({
+    embeds: [new EmbedBuilder()
+      .setColor(0x57f287)
+      .setTitle('✅ Backup Restored')
+      .addFields(
+        { name: '📦 Backup', value: name, inline: true },
+        { name: '🎭 Roles restored', value: `${rolesRestored}`, inline: true },
+        { name: '❌ Roles failed', value: `${rolesFailed}`, inline: true },
+        { name: '⚙️ Bot config', value: 'Restored ✅', inline: true },
+        { name: '📅 Backup was from', value: new Date(backup.createdAt).toLocaleString(), inline: true },
+      )
+      .setFooter({ text: 'Note: deleted channels are not recreated to avoid disruption' })
+    ]
+  });
+}
+
+async function runBackupList(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  config = loadConfig();
+  const backups = config.backups || {};
+  const names = Object.keys(backups);
+  if (names.length === 0) return reply(ctx, { content: '❌ No backups found. Use `$backup <name>` to create one.' });
+
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle('📦 Saved Backups')
+    .setDescription(names.map(n => {
+      const b = backups[n];
+      return `**${n}** — ${b.guildName} — ${new Date(b.createdAt).toLocaleString()} — ${b.roles.length} roles`;
+    }).join('\n'))
+    .setFooter({ text: 'Use $restore <name> to restore • $backupdelete <name> to delete' });
+
+  await reply(ctx, { embeds: [embed] });
+}
+
+async function runBackupDelete(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const name = ctx.isSlash ? ctx.getOption('name') : ctx.args[0];
+  if (!name) return reply(ctx, { content: '❌ Please provide a backup name.' });
+  config = loadConfig();
+  if (!config.backups[name]) return reply(ctx, { content: `❌ No backup found with name **${name}**.` });
+  delete config.backups[name];
+  saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(0xed4245).setDescription(`🗑️ Deleted backup **${name}**.`)] });
+}
+
 // Welcome
 async function runSetWelcomeChannel(ctx) {
   if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
@@ -864,6 +1229,7 @@ async function runWelcomeConfig(ctx) {
       { name: 'Welcome Channel', value: config.welcomeChannelId ? `<#${config.welcomeChannelId}>` : 'Not set', inline: true },
       { name: 'Rules Channel', value: config.rulesChannelId ? `<#${config.rulesChannelId}>` : 'Not set', inline: true },
       { name: 'MM Request Channel', value: config.mmRequestChannelId ? `<#${config.mmRequestChannelId}>` : 'Not set', inline: true },
+      { name: 'Auto-Role', value: config.autoRoleId ? `<@&${config.autoRoleId}>` : 'Not set', inline: true },
       { name: 'Welcome Title', value: config.welcomeTitle || 'Not set' },
       { name: 'Welcome Message', value: config.welcomeMessage || 'Not set' },
     );
@@ -882,12 +1248,19 @@ async function runTestWelcome(ctx) {
 }
 
 // Nay
+async function runSetNayName(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const name = (ctx.isSlash ? ctx.getOption('name') : ctx.args[0] || '').toLowerCase().replace(/\s+/g, '');
+  if (!name) return reply(ctx, { content: '❌ Please provide a name (no spaces, lowercase). Example: `fay`, `offer`, `deal`' });
+  config.nayCommandName = name; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Offer command renamed to \`${config.prefix}${name}\`.\nThe \`/nay\` slash command still works too.`)] });
+}
 async function runSetRole(ctx) {
   if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
   const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
   if (!role) return reply(ctx, { content: '❌ Please mention a role.' });
   config.nayTriggerRoleId = role.id; saveConfig(config);
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Nay trigger role set to **${role.name}**.`)] });
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(0x57f287).setDescription(`✅ Offer trigger role set to **${role.name}**.`)] });
 }
 async function runSetNayRole(ctx) {
   if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
