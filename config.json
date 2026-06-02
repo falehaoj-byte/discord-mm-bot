@@ -1,0 +1,22 @@
+{
+  "prefix": "$",
+  "mmRoleId": null,
+  "ticketCategoryId": null,
+  "vouchData": {},
+  "vacationData": {},
+  "panelMessages": [],
+  "nayMessages": [],
+  "warnData": {},
+  "giveaways": [],
+  "nayMessage": null,
+  "nayTriggerRoleId": null,
+  "nayAcceptRoleId": null,
+  "panelImageUrl": null,
+  "welcomeChannelId": null,
+  "welcomeEnabled": false,
+  "welcomeTitle": "Welcome to the server!",
+  "welcomeMessage": "We hope you enjoy your stay.",
+  "rulesChannelId": null,
+  "mmRequestChannelId": null,
+  "savedEmbeds": {}
+}
