@@ -16,7 +16,18 @@ function loadConfig() {
     const d = {
       prefix: '$', mmRoleId: null, ticketCategoryId: null, vouchData: {}, vacationData: {},
       panelMessages: [], nayMessages: [], warnData: {}, giveaways: [],
-      nayMessage: null, nayTriggerRoleId: null, nayAcceptRoleId: null, panelImageUrl: null,
+      nayMessage: null, nayTriggerRoleId: null, nayAcceptRoleId: null,
+      panelImageUrl: null,
+      tpanelImageUrl: null,
+      spanelImageUrl: null,
+      ticketImageUrl: null,
+      supportTicketImageUrl: null,
+      tpanelTitle: 'Middleman Service',
+      tpanelDescription: null,
+      spanelTitle: 'Support Ticket',
+      spanelDescription: null,
+      ticketTitle: 'Ticket Opened',
+      supportTicketTitle: 'Support Ticket',
       welcomeChannelId: null, welcomeEnabled: false,
       welcomeTitle: 'Welcome to the server!',
       welcomeMessage: 'We hope you enjoy your stay.',
@@ -27,6 +38,7 @@ function loadConfig() {
       backups: {},
       gamblingData: {},
       transcriptChannelId: null,
+      supportRoleId: null,
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(d, null, 2));
     return d;
@@ -53,6 +65,18 @@ function loadConfig() {
   if (!cfg.backups) cfg.backups = {};
   if (!cfg.gamblingData) cfg.gamblingData = {};
   if (!cfg.transcriptChannelId) cfg.transcriptChannelId = null;
+  // Panel customization fields
+  if (!cfg.tpanelImageUrl) cfg.tpanelImageUrl = cfg.panelImageUrl || null;
+  if (!cfg.spanelImageUrl) cfg.spanelImageUrl = cfg.panelImageUrl || null;
+  if (!cfg.ticketImageUrl) cfg.ticketImageUrl = cfg.panelImageUrl || null;
+  if (!cfg.supportTicketImageUrl) cfg.supportTicketImageUrl = cfg.panelImageUrl || null;
+  if (!cfg.tpanelTitle) cfg.tpanelTitle = 'Middleman Service';
+  if (!cfg.tpanelDescription) cfg.tpanelDescription = null;
+  if (!cfg.spanelTitle) cfg.spanelTitle = 'Support Ticket';
+  if (!cfg.spanelDescription) cfg.spanelDescription = null;
+  if (!cfg.ticketTitle) cfg.ticketTitle = 'Ticket Opened';
+  if (!cfg.supportTicketTitle) cfg.supportTicketTitle = 'Support Ticket';
+  if (!cfg.supportRoleId) cfg.supportRoleId = null;
   return cfg;
 }
 function saveConfig(cfg) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); }
@@ -64,7 +88,8 @@ let config = loadConfig();
 const COLORS = {
   orange: 0xf5a623, green: 0x57f287, red: 0xed4245,
   blue: 0x5865f2, cyan: 0x00b0f4, purple: 0x9b59b6,
-  yellow: 0xffa500, pink: 0xff6b9d,
+  yellow: 0xffa500, pink: 0xff6b9d, gold: 0xFFD700,
+  dark: 0x2f3136,
 };
 
 function getBalance(userId) {
@@ -157,8 +182,23 @@ const slashCommands = [
   new SlashCommandBuilder().setName('setmmrole').setDescription('Set the middleman role').addRoleOption(o => o.setName('role').setDescription('MM role').setRequired(true)),
   new SlashCommandBuilder().setName('setcategory').setDescription('Set ticket category').addChannelOption(o => o.setName('category').setDescription('Category').setRequired(true)),
   new SlashCommandBuilder().setName('settranscriptchannel').setDescription('Set channel for ticket transcripts').addChannelOption(o => o.setName('channel').setDescription('Channel').setRequired(true)),
+  new SlashCommandBuilder().setName('setsupportrole').setDescription('Set the role pinged for support tickets').addRoleOption(o => o.setName('role').setDescription('Support role').setRequired(true)),
   new SlashCommandBuilder().setName('setprefix').setDescription('Change the bot prefix').addStringOption(o => o.setName('prefix').setDescription('New prefix').setRequired(true)),
-  new SlashCommandBuilder().setName('setpicture').setDescription('Set image on all panels').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
+  // Panel image customization
+  new SlashCommandBuilder().setName('settradingpanelimage').setDescription('Set image on the trading panel embed').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
+  new SlashCommandBuilder().setName('setsupportpanelimage').setDescription('Set image on the support panel embed').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
+  new SlashCommandBuilder().setName('setticketimage').setDescription('Set image inside trading ticket channels').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
+  new SlashCommandBuilder().setName('setsupportticketimage').setDescription('Set image inside support ticket channels').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
+  new SlashCommandBuilder().setName('setpicture').setDescription('Set image on ALL panels and tickets at once').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
+  // Panel text customization
+  new SlashCommandBuilder().setName('settpanetitle').setDescription('Set the trading panel title').addStringOption(o => o.setName('title').setDescription('New title').setRequired(true)),
+  new SlashCommandBuilder().setName('settpaneldesc').setDescription('Set the trading panel description').addStringOption(o => o.setName('description').setDescription('New description (use \\n for new lines)').setRequired(true)),
+  new SlashCommandBuilder().setName('setspanetitle').setDescription('Set the support panel title').addStringOption(o => o.setName('title').setDescription('New title').setRequired(true)),
+  new SlashCommandBuilder().setName('setspaneldesc').setDescription('Set the support panel description').addStringOption(o => o.setName('description').setDescription('New description (use \\n for new lines)').setRequired(true)),
+  new SlashCommandBuilder().setName('settickettitle').setDescription('Set the trading ticket embed title').addStringOption(o => o.setName('title').setDescription('New title').setRequired(true)),
+  new SlashCommandBuilder().setName('setsupporttickettitle').setDescription('Set the support ticket embed title').addStringOption(o => o.setName('title').setDescription('New title').setRequired(true)),
+  new SlashCommandBuilder().setName('panelconfig').setDescription('View current panel configuration'),
+  // Other setup
   new SlashCommandBuilder().setName('setrole').setDescription('Set minimum role to use the yukic command').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)),
   new SlashCommandBuilder().setName('setnayrole').setDescription('Set role given on Accept').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)),
   new SlashCommandBuilder().setName('setnaymessage').setDescription('Set offer message').addStringOption(o => o.setName('message').setDescription('Message').setRequired(true)),
@@ -223,9 +263,8 @@ const slashCommands = [
   new SlashCommandBuilder().setName('restore').setDescription('Restore a backup').addStringOption(o => o.setName('name').setDescription('Backup name').setRequired(true)),
   new SlashCommandBuilder().setName('backuplist').setDescription('List all backups'),
   new SlashCommandBuilder().setName('backupdelete').setDescription('Delete a backup').addStringOption(o => o.setName('name').setDescription('Backup name').setRequired(true)),
-  // Gambling
+  // Gambling (no dih)
   new SlashCommandBuilder().setName('balance').setDescription('Check your coin balance').addUserOption(o => o.setName('user').setDescription('User')),
-  new SlashCommandBuilder().setName('dih').setDescription('Give coins to another user').addUserOption(o => o.setName('user').setDescription('User').setRequired(true)).addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true)),
   new SlashCommandBuilder().setName('gamble').setDescription('Gamble your coins').addIntegerOption(o => o.setName('amount').setDescription('Amount to gamble').setRequired(true)),
   new SlashCommandBuilder().setName('flip').setDescription('Flip a coin').addIntegerOption(o => o.setName('amount').setDescription('Amount to bet').setRequired(true)).addStringOption(o => o.setName('side').setDescription('heads or tails').setRequired(true)),
   new SlashCommandBuilder().setName('slots').setDescription('Play the slot machine').addIntegerOption(o => o.setName('amount').setDescription('Amount to bet').setRequired(true)),
@@ -252,7 +291,7 @@ client.once('ready', async () => {
 // ─────────────────────────────────────────────────────────────
 // AFK TRACKING
 // ─────────────────────────────────────────────────────────────
-const afkUsers = new Map(); // userId -> { reason, time }
+const afkUsers = new Map();
 
 // ─────────────────────────────────────────────────────────────
 // AUTO ROLE ON JOIN
@@ -286,21 +325,19 @@ async function sendWelcomeMessage(channel, member) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MESSAGE CREATE — PREFIX + AFK + MENTION YUKIC TRIGGER
+// MESSAGE CREATE
 // ─────────────────────────────────────────────────────────────
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   config = loadConfig();
   const PREFIX = config.prefix;
 
-  // ── AFK: remove AFK when they speak ──
   if (afkUsers.has(message.author.id)) {
     afkUsers.delete(message.author.id);
     const m = await message.channel.send({ embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Welcome back <@${message.author.id}>! Your AFK has been removed.`)] });
     setTimeout(() => m.delete().catch(() => {}), 5000);
   }
 
-  // ── AFK: notify when someone pings an AFK user ──
   for (const [userId, afkData] of afkUsers) {
     if (message.mentions.users.has(userId)) {
       const timeAgo = formatTimeAgo(afkData.time);
@@ -308,7 +345,6 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // ── Mention of a user in a ticket channel triggers yukic ──
   if (message.channel.name && message.channel.name.startsWith('ticket-')) {
     const mentioned = message.mentions.members.first();
     if (mentioned && !mentioned.user.bot && message.content.trim().match(/^<@!?\d+>$/) && mentioned.id !== message.author.id) {
@@ -341,7 +377,21 @@ client.on('messageCreate', async (message) => {
     help: runHelp, tpanel: runTPanel, spanel: runSPanel, panel: runTPanel,
     setmmrole: runSetMMRole, setcategory: runSetCategory,
     settranscriptchannel: runSetTranscriptChannel,
-    setprefix: runSetPrefix, setpicture: runSetPicture, setrole: runSetRole,
+    setsupportrole: runSetSupportRole,
+    setprefix: runSetPrefix,
+    settradingpanelimage: runSetTradingPanelImage,
+    setsupportpanelimage: runSetSupportPanelImage,
+    setticketimage: runSetTicketImage,
+    setsupportticketimage: runSetSupportTicketImage,
+    setpicture: runSetPicture,
+    settpanetitle: runSetTPaneTitle,
+    settpaneldesc: runSetTPaneDesc,
+    setspanetitle: runSetSPaneTitle,
+    setspaneldesc: runSetSPaneDesc,
+    settickettitle: runSetTicketTitle,
+    setsupporttickettitle: runSetSupportTicketTitle,
+    panelconfig: runPanelConfig,
+    setrole: runSetRole,
     setnayrole: runSetNayRole, setnaymessage: runSetNayMessage,
     resetnaymessage: runResetNayMessage, setnayname: runSetNayName,
     [nayName]: runYukic, yukic: runYukic,
@@ -365,9 +415,8 @@ client.on('messageCreate', async (message) => {
     welcomeconfig: runWelcomeConfig, testwelcome: runTestWelcome,
     setautorole: runSetAutoRole, removeautorole: runRemoveAutoRole,
     backup: runBackup, restore: runRestore, backuplist: runBackupList, backupdelete: runBackupDelete,
-    // Gambling
+    // Gambling (no dih)
     balance: runBalance, bal: runBalance,
-    dih: runDih, give: runDih,
     gamble: runGamble, bet: runGamble,
     flip: runFlip,
     slots: runSlots,
@@ -399,7 +448,21 @@ client.on('interactionCreate', async (interaction) => {
       help: runHelp, tpanel: runTPanel, spanel: runSPanel, panel: runTPanel,
       setmmrole: runSetMMRole, setcategory: runSetCategory,
       settranscriptchannel: runSetTranscriptChannel,
-      setprefix: runSetPrefix, setpicture: runSetPicture, setrole: runSetRole,
+      setsupportrole: runSetSupportRole,
+      setprefix: runSetPrefix,
+      settradingpanelimage: runSetTradingPanelImage,
+      setsupportpanelimage: runSetSupportPanelImage,
+      setticketimage: runSetTicketImage,
+      setsupportticketimage: runSetSupportTicketImage,
+      setpicture: runSetPicture,
+      settpanetitle: runSetTPaneTitle,
+      settpaneldesc: runSetTPaneDesc,
+      setspanetitle: runSetSPaneTitle,
+      setspaneldesc: runSetSPaneDesc,
+      settickettitle: runSetTicketTitle,
+      setsupporttickettitle: runSetSupportTicketTitle,
+      panelconfig: runPanelConfig,
+      setrole: runSetRole,
       setnayrole: runSetNayRole, setnaymessage: runSetNayMessage,
       resetnaymessage: runResetNayMessage, setnayname: runSetNayName,
       yukic: runYukic,
@@ -424,7 +487,7 @@ client.on('interactionCreate', async (interaction) => {
       welcomeconfig: runWelcomeConfig, testwelcome: runTestWelcome,
       setautorole: runSetAutoRole, removeautorole: runRemoveAutoRole,
       backup: runBackup, restore: runRestore, backuplist: runBackupList, backupdelete: runBackupDelete,
-      balance: runBalance, dih: runDih, gamble: runGamble, flip: runFlip,
+      balance: runBalance, gamble: runGamble, flip: runFlip,
       slots: runSlots, rob: runRob, daily: runDaily, leaderboard: runLeaderboard, setcoins: runSetCoins,
     };
     if (cmds[interaction.commandName]) cmds[interaction.commandName](ctx);
@@ -500,14 +563,8 @@ client.on('interactionCreate', async (interaction) => {
     return createTradingTicket(interaction);
   }
 
-  // ── Ticket close confirm modal ──
-  if (interaction.isModalSubmit() && interaction.customId === 'modal_close_ticket') {
-    return handleCloseTicketModal(interaction);
-  }
-
   // ── Other buttons ──
   if (interaction.isButton()) {
-    // ── Claim ticket button ──
     if (interaction.customId === 'claim_ticket') {
       config = loadConfig();
       const hasMmRole = config.mmRoleId && interaction.member.roles.cache.has(config.mmRoleId);
@@ -520,7 +577,6 @@ client.on('interactionCreate', async (interaction) => {
         .setDescription(`This ticket has been claimed by <@${interaction.user.id}>.\nThey will assist you shortly.`)
         .setThumbnail(interaction.user.displayAvatarURL())
         .setTimestamp();
-      // Disable the claim button after claiming
       const disabledRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('claim_ticket').setLabel(`✅ Claimed by ${interaction.user.username}`).setStyle(ButtonStyle.Success).setDisabled(true),
         new ButtonBuilder().setCustomId('close_ticket_btn').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger),
@@ -529,16 +585,13 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.channel.send({ embeds: [embed] });
     }
 
-    // ── Close ticket button ──
     if (interaction.customId === 'close_ticket_btn' || interaction.customId === 'close_ticket') {
       if (!interaction.channel.name.startsWith('ticket-')) return;
       const hasMmRole = config.mmRoleId && interaction.member.roles.cache.has(config.mmRoleId);
       if (!hasMmRole && !interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-        // Allow ticket opener to close their own ticket
         const canClose = interaction.channel.permissionOverwrites.cache.has(interaction.user.id);
         if (!canClose) return interaction.reply({ content: '❌ You cannot close this ticket.', ephemeral: true });
       }
-      // Save transcript then close
       await interaction.reply({ content: '📄 Saving transcript and closing in 5 seconds...', ephemeral: false });
       await saveTranscript(interaction.channel, interaction.guild);
       return setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
@@ -597,7 +650,6 @@ async function saveTranscript(channel, guild) {
     });
     const transcriptContent = `Transcript of #${channel.name}\nGuild: ${guild.name}\nDate: ${new Date().toISOString()}\n${'─'.repeat(60)}\n${lines.join('\n')}`;
     const file = new AttachmentBuilder(Buffer.from(transcriptContent, 'utf8'), { name: `transcript-${channel.name}.txt` });
-
     if (config.transcriptChannelId) {
       const transcriptChannel = guild.channels.cache.get(config.transcriptChannelId);
       if (transcriptChannel) {
@@ -864,7 +916,7 @@ async function showHelpSection(interaction, section) {
       commands: [
         { name: `${P}${nayName} @user`, desc: `Send offer to a user (currently: ${nayName})` },
         { name: `Mention @user in ticket`, desc: 'Auto-triggers the offer when you mention a user in a ticket' },
-        { name: `${P}setnayname <name>`, desc: `Rename the offer command` },
+        { name: `${P}setnayname <name>`, desc: 'Rename the offer command' },
         { name: `${P}setrole @role`, desc: 'Set minimum role required' },
         { name: `${P}setnayrole @role`, desc: 'Set role given on accept' },
         { name: `${P}setnaymessage <msg>`, desc: 'Set the offer message' },
@@ -875,7 +927,6 @@ async function showHelpSection(interaction, section) {
       emoji: '🎰', name: 'Gambling', color: COLORS.purple,
       commands: [
         { name: `${P}balance [@user]`, desc: 'Check your coin balance' },
-        { name: `${P}dih @user <amount>`, desc: 'Give coins to another user' },
         { name: `${P}gamble <amount>`, desc: 'Gamble — 45% chance to double your bet' },
         { name: `${P}flip <amount> <heads/tails>`, desc: '50/50 coin flip' },
         { name: `${P}slots <amount>`, desc: '🎰 Slot machine (big win possible!)' },
@@ -910,7 +961,7 @@ async function showHelpSection(interaction, section) {
         { name: `${P}embed`, desc: 'Open the interactive embed builder' },
         { name: `${P}embeds`, desc: 'Manage saved embeds' },
         { name: `${P}role @user @role`, desc: 'Toggle a role on a user' },
-        { name: `${P}nickname @user [name]`, desc: "Set/reset nickname" },
+        { name: `${P}nickname @user [name]`, desc: 'Set/reset nickname' },
         { name: `${P}fill`, desc: 'Give yourself all roles below yours' },
         { name: `${P}afk [reason]`, desc: 'Mark yourself as AFK' },
       ],
@@ -919,11 +970,11 @@ async function showHelpSection(interaction, section) {
       emoji: '🛠️', name: 'Info & Stats', color: COLORS.cyan,
       commands: [
         { name: `${P}serverinfo`, desc: 'View server details' },
-        { name: `${P}userinfo [@user]`, desc: "View user info" },
-        { name: `${P}avatar [@user]`, desc: "Get avatar" },
-        { name: `${P}banner [@user]`, desc: "Get banner" },
-        { name: `${P}membercount`, desc: "Member count" },
-        { name: `${P}ping`, desc: "Bot latency" },
+        { name: `${P}userinfo [@user]`, desc: 'View user info' },
+        { name: `${P}avatar [@user]`, desc: 'Get avatar' },
+        { name: `${P}banner [@user]`, desc: 'Get banner' },
+        { name: `${P}membercount`, desc: 'Member count' },
+        { name: `${P}ping`, desc: 'Bot latency' },
         { name: `${P}uptime`, desc: 'Bot uptime' },
         { name: `${P}botinfo`, desc: 'Bot info' },
       ],
@@ -932,10 +983,22 @@ async function showHelpSection(interaction, section) {
       emoji: '⚙️', name: 'Setup & Config', color: COLORS.purple,
       commands: [
         { name: `${P}setmmrole @role`, desc: 'Set the Middleman staff role' },
+        { name: `${P}setsupportrole @role`, desc: 'Set the role pinged for support tickets' },
         { name: `${P}setcategory #cat`, desc: 'Set ticket category' },
         { name: `${P}settranscriptchannel #ch`, desc: 'Set transcript log channel' },
         { name: `${P}setprefix <char>`, desc: 'Change prefix' },
-        { name: `${P}setpicture`, desc: 'Set global image on panels' },
+        { name: `${P}settradingpanelimage`, desc: 'Set image on the trading panel' },
+        { name: `${P}setsupportpanelimage`, desc: 'Set image on the support panel' },
+        { name: `${P}setticketimage`, desc: 'Set image inside trading tickets' },
+        { name: `${P}setsupportticketimage`, desc: 'Set image inside support tickets' },
+        { name: `${P}setpicture`, desc: 'Set one image on ALL panels & tickets' },
+        { name: `${P}settpanetitle <title>`, desc: 'Set trading panel title' },
+        { name: `${P}settpaneldesc <desc>`, desc: 'Set trading panel description' },
+        { name: `${P}setspanetitle <title>`, desc: 'Set support panel title' },
+        { name: `${P}setspaneldesc <desc>`, desc: 'Set support panel description' },
+        { name: `${P}settickettitle <title>`, desc: 'Set trading ticket embed title' },
+        { name: `${P}setsupporttickettitle <title>`, desc: 'Set support ticket embed title' },
+        { name: `${P}panelconfig`, desc: 'View current panel config' },
         { name: `${P}setautorole @role`, desc: 'Auto-give role on join' },
         { name: `${P}removeautorole`, desc: 'Disable auto-role' },
         { name: `${P}backup <name>`, desc: 'Backup server config' },
@@ -973,7 +1036,7 @@ function buildHelpMenuEmbed() {
       { name: '🔨 Moderation', value: 'Ban, kick, mute, warn & more', inline: true },
       { name: '🎉 Fun & Utility', value: 'Giveaways, polls, embeds & more', inline: true },
       { name: '🛠️ Info', value: 'Server, user & bot info', inline: true },
-      { name: '⚙️ Setup', value: 'Configure the bot', inline: true },
+      { name: '⚙️ Setup', value: 'Configure panels, images & bot', inline: true },
     )
     .setFooter({ text: 'Select a category to see detailed commands' });
 }
@@ -996,6 +1059,38 @@ function buildHelpMenuRows() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// DEFAULT TRADING PANEL DESCRIPTION
+// ─────────────────────────────────────────────────────────────
+function getDefaultTPanelDesc() {
+  return (
+    'Welcome to Koodas Trading Kamp, Middleman Service Centre.\n\n' +
+    'At Koodas Trading Kamp, we value and provide a safe and secure way to exchange your goods.\n\n' +
+    '**If you\'ve found a trade and want to ensure your safety, you can use our middleman service.**\n\n' +
+    '───\n' +
+    '**Usage Conditions:**\n' +
+    '• Both parties agree to trade before requesting a middleman.\n' +
+    '• State the trade and value.\n' +
+    '• Fake or troll tickets will result in punishments.'
+  );
+}
+
+function getDefaultSPanelDesc() {
+  return (
+    'Welcome to Koodas Trading Kamp.\n\n' +
+    'This panel is strictly for Staff Applications, Reports, and General Assistance.\n' +
+    'Our support team is here to maintain a safe, professional, and organized community environment.\n\n' +
+    'If you need help, wish to apply for a staff role, or want to report an issue, simply open a ticket and follow the instructions provided by our team.\n\n' +
+    '───\n' +
+    '**Usage Conditions:**\n' +
+    '• Select the correct category for your request.\n' +
+    '• Provide complete and honest information.\n' +
+    '• Follow all server rules and policies while inside tickets.\n' +
+    '• Fake, troll, or abusive tickets will result in punishment.\n' +
+    '• Treat staff with respect at all times.'
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // COMMANDS
 // ─────────────────────────────────────────────────────────────
 async function runHelp(ctx) {
@@ -1014,24 +1109,15 @@ async function runEmbed(ctx) {
   }
 }
 
-// ── Trading Panel ($tpanel) ──
+// ── Trading Panel ──
 async function runTPanel(ctx) {
   if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need **Manage Server** permission.', ephemeral: true });
   config = loadConfig();
   const embed = new EmbedBuilder()
     .setColor(COLORS.orange)
-    .setTitle('Middleman Service')
-    .setDescription(
-      'Welcome to Koodas Trading Kamp, Middleman Service Centre.\n\n' +
-      'At Koodas Trading Kamp, we value and provide a safe and secure way to exchange your goods.\n\n' +
-      '**If you\'ve found a trade and want to ensure your safety, you can use our middleman service.**\n\n' +
-      '───\n' +
-      '**Usage Conditions:**\n' +
-      '• Both parties agree to trade before requesting a middleman.\n' +
-      '• State the trade and value.\n' +
-      '• Fake or troll tickets will result in punishments.'
-    );
-  if (config.panelImageUrl) embed.setImage(config.panelImageUrl);
+    .setTitle(config.tpanelTitle || 'Middleman Service')
+    .setDescription(config.tpanelDescription || getDefaultTPanelDesc());
+  if (config.tpanelImageUrl) embed.setImage(config.tpanelImageUrl);
 
   const row = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder().setCustomId('ticket_type_trading').setPlaceholder('Select an option...').addOptions([
@@ -1048,27 +1134,15 @@ async function runTPanel(ctx) {
   else await ctx.message.reply('✅ Trading panel sent!');
 }
 
-// ── Support Panel ($spanel) ──
+// ── Support Panel ──
 async function runSPanel(ctx) {
   if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need **Manage Server** permission.', ephemeral: true });
   config = loadConfig();
   const embed = new EmbedBuilder()
     .setColor(COLORS.blue)
-    .setTitle('Support Ticket')
-    .setDescription(
-      'Welcome to Koodas Trading Kamp.\n\n' +
-      'This panel is strictly for Staff Applications, Reports, and General Assistance.\n' +
-      'Our support team is here to maintain a safe, professional, and organized community environment.\n\n' +
-      'If you need help, wish to apply for a staff role, or want to report an issue, simply open a ticket and follow the instructions provided by our team.\n\n' +
-      '───\n' +
-      '**Usage Conditions:**\n' +
-      '• Select the correct category for your request.\n' +
-      '• Provide complete and honest information.\n' +
-      '• Follow all server rules and policies while inside tickets.\n' +
-      '• Fake, troll, or abusive tickets will result in punishment.\n' +
-      '• Treat staff with respect at all times.'
-    );
-  if (config.panelImageUrl) embed.setImage(config.panelImageUrl);
+    .setTitle(config.spanelTitle || 'Support Ticket')
+    .setDescription(config.spanelDescription || getDefaultSPanelDesc());
+  if (config.spanelImageUrl) embed.setImage(config.spanelImageUrl);
 
   const row = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder().setCustomId('ticket_type_support').setPlaceholder('Select an option...').addOptions([
@@ -1084,6 +1158,132 @@ async function runSPanel(ctx) {
   saveConfig(config);
   if (ctx.isSlash) await ctx.interaction.reply({ content: '✅ Support panel sent!', ephemeral: true });
   else await ctx.message.reply('✅ Support panel sent!');
+}
+
+// ── Panel & Ticket Image/Text Setup Commands ──
+async function runSetTradingPanelImage(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  let imageUrl = ctx.isSlash ? ctx.interaction.options.getAttachment('image')?.url : ctx.message.attachments.first()?.url;
+  if (!imageUrl) return reply(ctx, { content: '❌ Please attach an image.' });
+  config = loadConfig(); config.tpanelImageUrl = imageUrl; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Trading panel image updated! Re-send the panel with `/tpanel` to see it.').setImage(imageUrl)] });
+}
+
+async function runSetSupportPanelImage(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  let imageUrl = ctx.isSlash ? ctx.interaction.options.getAttachment('image')?.url : ctx.message.attachments.first()?.url;
+  if (!imageUrl) return reply(ctx, { content: '❌ Please attach an image.' });
+  config = loadConfig(); config.spanelImageUrl = imageUrl; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Support panel image updated! Re-send the panel with `/spanel` to see it.').setImage(imageUrl)] });
+}
+
+async function runSetTicketImage(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  let imageUrl = ctx.isSlash ? ctx.interaction.options.getAttachment('image')?.url : ctx.message.attachments.first()?.url;
+  if (!imageUrl) return reply(ctx, { content: '❌ Please attach an image.' });
+  config = loadConfig(); config.ticketImageUrl = imageUrl; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Trading ticket image updated! New tickets will use this image.').setImage(imageUrl)] });
+}
+
+async function runSetSupportTicketImage(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  let imageUrl = ctx.isSlash ? ctx.interaction.options.getAttachment('image')?.url : ctx.message.attachments.first()?.url;
+  if (!imageUrl) return reply(ctx, { content: '❌ Please attach an image.' });
+  config = loadConfig(); config.supportTicketImageUrl = imageUrl; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Support ticket image updated! New support tickets will use this image.').setImage(imageUrl)] });
+}
+
+async function runSetPicture(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  let imageUrl = ctx.isSlash ? ctx.interaction.options.getAttachment('image')?.url : ctx.message.attachments.first()?.url;
+  if (!imageUrl) return reply(ctx, { content: '❌ Please attach an image.' });
+  config = loadConfig();
+  config.panelImageUrl = imageUrl;
+  config.tpanelImageUrl = imageUrl;
+  config.spanelImageUrl = imageUrl;
+  config.ticketImageUrl = imageUrl;
+  config.supportTicketImageUrl = imageUrl;
+  saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Image updated on **all** panels and tickets!').setImage(imageUrl)] });
+}
+
+async function runSetTPaneTitle(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const title = ctx.isSlash ? ctx.getOption('title') : ctx.args.join(' ');
+  if (!title) return reply(ctx, { content: '❌ Please provide a title.' });
+  config = loadConfig(); config.tpanelTitle = title; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Trading panel title set to: **${title}**`)] });
+}
+
+async function runSetTPaneDesc(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const desc = ctx.isSlash ? ctx.getOption('description') : ctx.args.join(' ');
+  if (!desc) return reply(ctx, { content: '❌ Please provide a description.' });
+  config = loadConfig(); config.tpanelDescription = desc.replace(/\\n/g, '\n'); saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Trading panel description updated.`)] });
+}
+
+async function runSetSPaneTitle(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const title = ctx.isSlash ? ctx.getOption('title') : ctx.args.join(' ');
+  if (!title) return reply(ctx, { content: '❌ Please provide a title.' });
+  config = loadConfig(); config.spanelTitle = title; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Support panel title set to: **${title}**`)] });
+}
+
+async function runSetSPaneDesc(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const desc = ctx.isSlash ? ctx.getOption('description') : ctx.args.join(' ');
+  if (!desc) return reply(ctx, { content: '❌ Please provide a description.' });
+  config = loadConfig(); config.spanelDescription = desc.replace(/\\n/g, '\n'); saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Support panel description updated.`)] });
+}
+
+async function runSetTicketTitle(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const title = ctx.isSlash ? ctx.getOption('title') : ctx.args.join(' ');
+  if (!title) return reply(ctx, { content: '❌ Please provide a title.' });
+  config = loadConfig(); config.ticketTitle = title; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Trading ticket embed title set to: **${title}**`)] });
+}
+
+async function runSetSupportTicketTitle(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const title = ctx.isSlash ? ctx.getOption('title') : ctx.args.join(' ');
+  if (!title) return reply(ctx, { content: '❌ Please provide a title.' });
+  config = loadConfig(); config.supportTicketTitle = title; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Support ticket embed title set to: **${title}**`)] });
+}
+
+async function runPanelConfig(ctx) {
+  if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need **Manage Server** permission.' });
+  config = loadConfig();
+  await reply(ctx, { embeds: [new EmbedBuilder()
+    .setColor(COLORS.cyan)
+    .setTitle('⚙️ Panel & Ticket Configuration')
+    .addFields(
+      { name: '📋 Trading Panel Title', value: config.tpanelTitle || 'Middleman Service', inline: true },
+      { name: '📋 Support Panel Title', value: config.spanelTitle || 'Support Ticket', inline: true },
+      { name: '🎫 Trading Ticket Title', value: config.ticketTitle || 'Ticket Opened', inline: true },
+      { name: '🎫 Support Ticket Title', value: config.supportTicketTitle || 'Support Ticket', inline: true },
+      { name: '🖼️ Trading Panel Image', value: config.tpanelImageUrl ? '✅ Set' : '❌ Not set', inline: true },
+      { name: '🖼️ Support Panel Image', value: config.spanelImageUrl ? '✅ Set' : '❌ Not set', inline: true },
+      { name: '🖼️ Trading Ticket Image', value: config.ticketImageUrl ? '✅ Set' : '❌ Not set', inline: true },
+      { name: '🖼️ Support Ticket Image', value: config.supportTicketImageUrl ? '✅ Set' : '❌ Not set', inline: true },
+      { name: '🤝 MM Role', value: config.mmRoleId ? `<@&${config.mmRoleId}>` : '❌ Not set', inline: true },
+      { name: '🆘 Support Role', value: config.supportRoleId ? `<@&${config.supportRoleId}>` : '❌ Not set', inline: true },
+      { name: '📁 Ticket Category', value: config.ticketCategoryId ? `<#${config.ticketCategoryId}>` : '❌ Not set', inline: true },
+      { name: '📄 Transcript Channel', value: config.transcriptChannelId ? `<#${config.transcriptChannelId}>` : '❌ Not set', inline: true },
+    )
+  ] });
+}
+
+async function runSetSupportRole(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
+  const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
+  if (!role) return reply(ctx, { content: '❌ Please mention a role.' });
+  config = loadConfig(); config.supportRoleId = role.id; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Support ticket ping role set to **${role.name}**.`)] });
 }
 
 async function runSetTranscriptChannel(ctx) {
@@ -1114,28 +1314,6 @@ async function runSetPrefix(ctx) {
   if (!p) return reply(ctx, { content: '❌ Please provide a prefix.' });
   config.prefix = p; saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Prefix changed to \`${p}\``)] });
-}
-async function runSetPicture(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
-  let imageUrl = ctx.isSlash ? ctx.interaction.options.getAttachment('image')?.url : ctx.message.attachments.first()?.url;
-  if (!imageUrl) return reply(ctx, { content: '❌ Please attach an image.' });
-  config = loadConfig();
-  config.panelImageUrl = imageUrl;
-  let updated = 0;
-  const validPanels = [];
-  for (const panel of [...config.panelMessages]) {
-    try {
-      const ch = await ctx.guild.channels.fetch(panel.channelId).catch(() => null);
-      if (!ch) continue;
-      const msg = await ch.messages.fetch(panel.messageId).catch(() => null);
-      if (!msg || !msg.embeds[0]) continue;
-      await msg.edit({ embeds: [EmbedBuilder.from(msg.embeds[0]).setImage(imageUrl)], components: msg.components });
-      updated++; validPanels.push(panel);
-    } catch (e) {}
-  }
-  config.panelMessages = validPanels;
-  saveConfig(config);
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Image updated on **${updated}** panel(s).`)] });
 }
 async function runSetAutoRole(ctx) {
   if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ You need **Administrator** permission.' });
@@ -1698,26 +1876,12 @@ async function runFill(ctx) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GAMBLING COMMANDS
+// GAMBLING COMMANDS (no dih)
 // ─────────────────────────────────────────────────────────────
 async function runBalance(ctx) {
   const target = ctx.isSlash ? (ctx.getUserOption('user') || ctx.interaction.user) : (ctx.message.mentions.users.first() || ctx.message.author);
   const bal = getBalance(target.id);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.purple).setTitle('💰 Balance').setThumbnail(target.displayAvatarURL()).addFields({ name: '👤 User', value: `<@${target.id}>`, inline: true }, { name: '🪙 Coins', value: `**${bal.toLocaleString()}**`, inline: true })] });
-}
-
-async function runDih(ctx) {
-  const author = ctx.isSlash ? ctx.interaction.user : ctx.message.author;
-  const target = ctx.isSlash ? ctx.getUserOption('user') : ctx.message.mentions.users.first();
-  const amount = ctx.isSlash ? ctx.getOption('amount') : parseInt(ctx.args[1]);
-  if (!target) return reply(ctx, { content: '❌ Please mention a user.' });
-  if (target.id === author.id) return reply(ctx, { content: '❌ You cannot give coins to yourself.' });
-  if (!amount || amount <= 0) return reply(ctx, { content: '❌ Please provide a valid amount.' });
-  const bal = getBalance(author.id);
-  if (bal < amount) return reply(ctx, { content: `❌ You only have **${bal}** coins.` });
-  addBalance(author.id, -amount);
-  addBalance(target.id, amount);
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setTitle('💸 Coins Sent').addFields({ name: '📤 From', value: `<@${author.id}>`, inline: true }, { name: '📥 To', value: `<@${target.id}>`, inline: true }, { name: '🪙 Amount', value: `**${amount.toLocaleString()}**`, inline: true })] });
 }
 
 async function runGamble(ctx) {
@@ -1767,17 +1931,13 @@ async function runSlots(ctx) {
   if (!amount || amount <= 0) return reply(ctx, { content: '❌ Please provide a valid amount.' });
   const bal = getBalance(userId);
   if (bal < amount) return reply(ctx, { content: `❌ You only have **${bal}** coins.` });
-
   const roll = () => SLOT_EMOJIS[Math.floor(Math.random() * SLOT_EMOJIS.length)];
   const s1 = roll(), s2 = roll(), s3 = roll();
   const display = `[ ${s1} | ${s2} | ${s3} ]`;
-
   let multiplier = 0;
-  if (s1 === s2 && s2 === s3) multiplier = SLOT_MULTIPLIERS[s1] || 2; // jackpot
-  else if (s1 === s2 || s2 === s3 || s1 === s3) multiplier = 0.5; // partial match
-
-  let newBal;
-  let resultText;
+  if (s1 === s2 && s2 === s3) multiplier = SLOT_MULTIPLIERS[s1] || 2;
+  else if (s1 === s2 || s2 === s3 || s1 === s3) multiplier = 0.5;
+  let newBal, resultText;
   if (multiplier === 0) {
     newBal = addBalance(userId, -amount);
     resultText = `❌ No match. Lost **${amount.toLocaleString()}** coins.`;
@@ -1790,7 +1950,6 @@ async function runSlots(ctx) {
     newBal = addBalance(userId, won - amount);
     resultText = multiplier >= 5 ? `🎰 **JACKPOT!** Won **${won.toLocaleString()}** coins! 🎉` : `✅ Winner! Won **${won.toLocaleString()}** coins!`;
   }
-
   await reply(ctx, { embeds: [new EmbedBuilder()
     .setColor(multiplier > 1 ? COLORS.green : multiplier > 0 ? COLORS.yellow : COLORS.red)
     .setTitle('🎰 Slot Machine')
@@ -1800,7 +1959,6 @@ async function runSlots(ctx) {
   ] });
 }
 
-// Cooldown tracker for rob and daily
 const robCooldowns = new Map();
 const dailyCooldowns = new Map();
 
@@ -1810,25 +1968,22 @@ async function runRob(ctx) {
   if (!target) return reply(ctx, { content: '❌ Please mention a user.' });
   if (target.id === userId) return reply(ctx, { content: '❌ You cannot rob yourself.' });
   if (target.bot) return reply(ctx, { content: '❌ You cannot rob a bot.' });
-
   const cooldown = robCooldowns.get(userId);
   if (cooldown && Date.now() < cooldown) {
     const left = Math.ceil((cooldown - Date.now()) / 1000);
     return reply(ctx, { content: `❌ You're on cooldown! Try again in **${left}s**.` });
   }
-  robCooldowns.set(userId, Date.now() + 60000); // 1 min cooldown
-
+  robCooldowns.set(userId, Date.now() + 60000);
   const targetBal = getBalance(target.id);
   if (targetBal < 50) return reply(ctx, { content: `❌ **${target.username}** is too broke to rob!` });
-
-  const success = Math.random() < 0.4; // 40% success
+  const success = Math.random() < 0.4;
   if (success) {
-    const stolen = Math.floor(targetBal * (0.1 + Math.random() * 0.2)); // 10-30%
+    const stolen = Math.floor(targetBal * (0.1 + Math.random() * 0.2));
     addBalance(target.id, -stolen);
     const newBal = addBalance(userId, stolen);
     await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setTitle('🦹 Robbery Successful!').setDescription(`You robbed **${stolen.toLocaleString()}** coins from <@${target.id}>!`).addFields({ name: '🏦 Your Balance', value: `**${newBal.toLocaleString()}** coins`, inline: true })] });
   } else {
-    const fine = Math.floor(getBalance(userId) * 0.1); // lose 10%
+    const fine = Math.floor(getBalance(userId) * 0.1);
     const newBal = addBalance(userId, -fine);
     await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.red).setTitle('👮 Caught!').setDescription(`You got caught trying to rob <@${target.id}> and paid a **${fine.toLocaleString()}** coin fine!`).addFields({ name: '🏦 Your Balance', value: `**${newBal.toLocaleString()}** coins`, inline: true })] });
   }
@@ -1841,7 +1996,7 @@ async function runDaily(ctx) {
     const left = Math.ceil((cooldown - Date.now()) / 3600000);
     return reply(ctx, { content: `❌ You already claimed your daily! Come back in **${left}h**.` });
   }
-  dailyCooldowns.set(userId, Date.now() + 86400000); // 24h
+  dailyCooldowns.set(userId, Date.now() + 86400000);
   const bonus = 200;
   const newBal = addBalance(userId, bonus);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setTitle('🎁 Daily Reward!').setDescription(`You claimed your daily **${bonus}** coins!`).addFields({ name: '🏦 Balance', value: `**${newBal.toLocaleString()}** coins`, inline: true }).setFooter({ text: 'Come back in 24 hours!' })] });
@@ -1904,26 +2059,35 @@ async function createTradingTicket(interaction) {
   }
 
   const typeLabel = isIngame ? '🎮 Ingame Trading' : '💳 PayPal/Cashapp/Crypto';
+
+  // ── Polished ticket embed ──
   const embed = new EmbedBuilder()
     .setColor(COLORS.orange)
-    .setTitle(`Purchase Role`)
-    .setDescription('Thanks for creating a ticket!\nA owner will be with you shortly.')
+    .setTitle(config.ticketTitle || 'Ticket Opened')
+    .setDescription(
+      `> 👋 Thanks for creating a ticket!\n> A **Middleman** will be with you shortly.\n\n` +
+      `─────────────────────────`
+    )
     .addFields(
       { name: '👤 Opened by', value: `<@${user.id}>`, inline: true },
       { name: '🤝 Trading with', value: tradingWithMember ? `<@${tradingWithMember.id}>` : `\`${tradingWith}\``, inline: true },
-      { name: '📋 Trade details', value: tradeDetails },
       { name: '🏷️ Type', value: typeLabel, inline: true },
+      { name: '📋 Trade Details', value: `\`\`\`${tradeDetails}\`\`\`` },
     );
+
   if (isIngame) {
     embed.addFields(
-      { name: '🔗 Join links?', value: interaction.fields.getTextInputValue('join_links'), inline: true },
-      { name: '🎮 Roblox usernames', value: interaction.fields.getTextInputValue('roblox_users') || 'N/A', inline: true },
+      { name: '🔗 Join Links Available?', value: interaction.fields.getTextInputValue('join_links'), inline: true },
+      { name: '🎮 Roblox Usernames', value: interaction.fields.getTextInputValue('roblox_users') || 'N/A', inline: true },
     );
   } else {
-    embed.addFields({ name: '💸 Payment method', value: interaction.fields.getTextInputValue('payment_method'), inline: true });
+    embed.addFields({ name: '💸 Payment Method', value: interaction.fields.getTextInputValue('payment_method'), inline: true });
   }
-  if (config.panelImageUrl) embed.setImage(config.panelImageUrl);
+
+  if (config.ticketImageUrl) embed.setImage(config.ticketImageUrl);
+  embed.setThumbnail(user.displayAvatarURL({ size: 256 }));
   embed.setFooter({ text: 'A middleman will claim this ticket shortly.' });
+  embed.setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('claim_ticket').setLabel('✅ Claim').setStyle(ButtonStyle.Success),
@@ -1955,6 +2119,8 @@ async function createSupportTicket(interaction, type, typeLabel) {
       { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ReadMessageHistory] },
     ];
     if (config.mmRoleId) overwrites.push({ id: config.mmRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
+    // Support role also gets access
+    if (config.supportRoleId) overwrites.push({ id: config.supportRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
     const opts = { name: channelName, type: ChannelType.GuildText, permissionOverwrites: overwrites };
     if (config.ticketCategoryId) opts.parent = config.ticketCategoryId;
     ticketChannel = await guild.channels.create(opts);
@@ -1962,16 +2128,24 @@ async function createSupportTicket(interaction, type, typeLabel) {
     return interaction.editReply({ content: '❌ Could not create ticket channel. Check my **Manage Channels** permission.' });
   }
 
+  // ── Polished support ticket embed ──
   const embed = new EmbedBuilder()
     .setColor(COLORS.blue)
-    .setTitle(`Support Ticket — ${typeLabel}`)
-    .setDescription('Thanks for opening a support ticket!\nA staff member will be with you shortly.')
+    .setTitle(`${config.supportTicketTitle || 'Support Ticket'} — ${typeLabel}`)
+    .setDescription(
+      `> 👋 Thanks for opening a support ticket!\n> A **staff member** will be with you shortly.\n\n` +
+      `─────────────────────────`
+    )
     .addFields(
       { name: '👤 Opened by', value: `<@${user.id}>`, inline: true },
       { name: '📋 Category', value: typeLabel, inline: true },
+      { name: '📅 Opened At', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
     );
-  if (config.panelImageUrl) embed.setImage(config.panelImageUrl);
+
+  if (config.supportTicketImageUrl) embed.setImage(config.supportTicketImageUrl);
+  embed.setThumbnail(user.displayAvatarURL({ size: 256 }));
   embed.setFooter({ text: 'Please describe your issue and wait for staff.' });
+  embed.setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('claim_ticket').setLabel('✅ Claim').setStyle(ButtonStyle.Success),
@@ -1979,7 +2153,8 @@ async function createSupportTicket(interaction, type, typeLabel) {
   );
 
   let ping = `<@${user.id}>`;
-  if (config.mmRoleId) ping += ` <@&${config.mmRoleId}>`;
+  if (config.supportRoleId) ping += ` <@&${config.supportRoleId}>`;
+  else if (config.mmRoleId) ping += ` <@&${config.mmRoleId}>`;
 
   await ticketChannel.send({ content: ping, embeds: [embed], components: [row] });
   await interaction.editReply({ content: `✅ Support ticket created: ${ticketChannel}` });
@@ -2034,12 +2209,8 @@ function hasModPerms(ctx) { return ctx.member.permissions.has(PermissionsBitFiel
 // ─────────────────────────────────────────────────────────────
 // UNHANDLED ERRORS
 // ─────────────────────────────────────────────────────────────
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled rejection:', err);
-});
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception:', err);
-});
+process.on('unhandledRejection', (err) => { console.error('Unhandled rejection:', err); });
+process.on('uncaughtException', (err) => { console.error('Uncaught exception:', err); });
 
 // ─────────────────────────────────────────────────────────────
 // LOGIN
