@@ -1,14 +1,13 @@
 {
   "name": "discord-mm-bot",
   "version": "1.0.0",
-  "description": "Discord Middleman Bot",
+  "description": "Discord Middleman Bot with Crypto, Gambling, Moderation & More",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5"
+    "discord.js": "^14.14.1"
   },
   "engines": {
     "node": ">=18.0.0"
