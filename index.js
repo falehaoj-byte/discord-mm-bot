@@ -2,35 +2,31 @@ const {
   Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder,
   ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle, ChannelType,
-  SlashCommandBuilder, REST, Routes, AttachmentBuilder
+  SlashCommandBuilder, REST, Routes, AttachmentBuilder, Role
 } = require('discord.js');
 const fs = require('fs');
-require('dotenv').config();
+const https = require('https');
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // CONFIG
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 const CONFIG_FILE = './config.json';
 function loadConfig() {
   if (!fs.existsSync(CONFIG_FILE)) {
     const d = {
       prefix: '$', mmRoleId: null, ticketCategoryId: null,
-      supportCategoryId: null, aiCategoryId: null,
-      vouchData: {}, vacationData: {},
+      supportCategoryId: null, vouchData: {}, vacationData: {},
       panelMessages: [], yukicMessages: [], warnData: {}, giveaways: [],
       yukicMessage: null, yukicTriggerRoleId: null, yukicAcceptRoleId: null,
       panelImageUrl: null,
-      tpanelImageUrl: null, spanelImageUrl: null, apanelImageUrl: null,
-      ticketImageUrl: null, supportTicketImageUrl: null, aiTicketImageUrl: null,
+      tpanelImageUrl: null, spanelImageUrl: null,
+      ticketImageUrl: null, supportTicketImageUrl: null,
       tpanelTitle: 'Middleman Service',
       tpanelDescription: null,
       spanelTitle: 'Support Ticket',
       spanelDescription: null,
-      apanelTitle: 'AI Middleman',
-      apanelDescription: null,
       ticketTitle: 'Ticket Opened',
       supportTicketTitle: 'Support Ticket',
-      aiTicketTitle: 'AI Middleman Ticket',
       welcomeChannelId: null, welcomeEnabled: false,
       welcomeTitle: 'Welcome to the server!',
       welcomeMessage: 'We hope you enjoy your stay.',
@@ -43,9 +39,19 @@ function loadConfig() {
       transcriptChannelId: null,
       supportRoleId: null,
       panelText: 'Roblox Values',
-      tpanelEmbedIds: [], spanelEmbedIds: [], apanelEmbedIds: [],
+      tpanelEmbedIds: [], spanelEmbedIds: [],
       helpRoleId: null,
-      aiSystemPrompt: null,
+      // NEW FEATURES
+      ticketMode: 'channel', // 'channel' or 'thread'
+      cryptoAddresses: {}, // userId -> { btc, eth, ltc, sol, usdt, usdc }
+      escrowData: {}, // active escrow deals
+      spamProtection: true,
+      banKickProtection: true,
+      autoVouchEnabled: false,
+      modRoleIds: { ban: null, kick: null, roleadd: null },
+      viewTicketsRoleId: null,
+      promoteLogChannelId: null,
+      promoteMinRoleId: null,
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(d, null, 2));
     return d;
@@ -60,7 +66,7 @@ function loadConfig() {
   const defaults = {
     panelMessages: [], yukicMessages: [], warnData: {}, giveaways: [],
     vouchData: {}, vacationData: {}, savedEmbeds: {}, backups: {},
-    gamblingData: {}, tpanelEmbedIds: [], spanelEmbedIds: [], apanelEmbedIds: [],
+    gamblingData: {}, tpanelEmbedIds: [], spanelEmbedIds: [],
     yukicMessage: null, yukicTriggerRoleId: null, yukicAcceptRoleId: null,
     welcomeChannelId: null, welcomeEnabled: false,
     welcomeTitle: 'Welcome to the server!', welcomeMessage: 'We hope you enjoy your stay.',
@@ -68,41 +74,45 @@ function loadConfig() {
     yukicCommandName: 'yukic', autoRoleId: null,
     transcriptChannelId: null, supportRoleId: null,
     panelText: 'Roblox Values',
-    tpanelImageUrl: null, spanelImageUrl: null, apanelImageUrl: null,
-    ticketImageUrl: null, supportTicketImageUrl: null, aiTicketImageUrl: null,
+    tpanelImageUrl: null, spanelImageUrl: null,
+    ticketImageUrl: null, supportTicketImageUrl: null,
     tpanelTitle: 'Middleman Service', tpanelDescription: null,
     spanelTitle: 'Support Ticket', spanelDescription: null,
-    apanelTitle: 'AI Middleman', apanelDescription: null,
     ticketTitle: 'Ticket Opened', supportTicketTitle: 'Support Ticket',
-    aiTicketTitle: 'AI Middleman Ticket',
-    helpRoleId: null, aiSystemPrompt: null,
-    supportCategoryId: null, aiCategoryId: null,
+    helpRoleId: null,
+    ticketMode: 'channel',
+    cryptoAddresses: {},
+    escrowData: {},
+    spamProtection: true,
+    banKickProtection: true,
+    autoVouchEnabled: false,
+    modRoleIds: { ban: null, kick: null, roleadd: null },
+    viewTicketsRoleId: null,
+    promoteLogChannelId: null,
+    promoteMinRoleId: null,
   };
   for (const [k, v] of Object.entries(defaults)) {
-    if (cfg[k] === undefined || cfg[k] === null && v !== null) {
+    if (cfg[k] === undefined || (cfg[k] === null && v !== null)) {
       if (cfg[k] === undefined) cfg[k] = v;
     }
   }
-  // image fallbacks
   if (!cfg.tpanelImageUrl) cfg.tpanelImageUrl = cfg.panelImageUrl || null;
   if (!cfg.spanelImageUrl) cfg.spanelImageUrl = cfg.panelImageUrl || null;
-  if (!cfg.apanelImageUrl) cfg.apanelImageUrl = cfg.panelImageUrl || null;
   if (!cfg.ticketImageUrl) cfg.ticketImageUrl = cfg.panelImageUrl || null;
   if (!cfg.supportTicketImageUrl) cfg.supportTicketImageUrl = cfg.panelImageUrl || null;
-  if (!cfg.aiTicketImageUrl) cfg.aiTicketImageUrl = cfg.panelImageUrl || null;
   return cfg;
 }
 function saveConfig(cfg) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); }
 let config = loadConfig();
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // COLORS & UTILS
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 const COLORS = {
   orange: 0xf5a623, green: 0x57f287, red: 0xed4245,
   blue: 0x5865f2, cyan: 0x00b0f4, purple: 0x9b59b6,
   yellow: 0xffa500, pink: 0xff6b9d, gold: 0xFFD700,
-  dark: 0x2f3136, ai: 0x00c8ff,
+  dark: 0x2f3136, crypto: 0x00ff88, thread: 0x9b59b6,
 };
 
 function getBalance(userId) {
@@ -118,45 +128,13 @@ function setBalance(userId, amount) {
 }
 function addBalance(userId, amount) { return setBalance(userId, getBalance(userId) + amount); }
 
-// ─────────────────────────────────────────────────────────────
-// ANTHROPIC AI HELPER
-// ─────────────────────────────────────────────────────────────
-async function callAI(messages, systemPrompt) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 600,
-        system: systemPrompt,
-        messages,
-      }),
-    });
-    const data = await res.json();
-    return data?.content?.[0]?.text || null;
-  } catch (e) {
-    console.error('AI call failed:', e);
-    return null;
-  }
-}
-
-// Store per-channel AI conversation history
-const aiTicketHistory = new Map();
-
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // EMBED BUILDER SESSION STORE
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 const embedSessions = {};
 function sessionEmbed(userId) {
   if (!embedSessions[userId]) {
-    embedSessions[userId] = { title: null, description: null, color: COLORS.orange, author: null, authorIcon: null, footer: null, footerIcon: null, image: null, thumbnail: null, fields: [] };
+    embedSessions[userId] = { title: null, description: null, color: COLORS.orange, author: null, authorIcon: null, footer: null, footerIcon: null, image: null, thumbnail: null, fields: [], roleButtons: [] };
   }
   return embedSessions[userId];
 }
@@ -188,7 +166,7 @@ function embedBuilderRows(userId) {
       new ButtonBuilder().setCustomId(`eb_addfield_${userId}`).setLabel('Add Field').setStyle(ButtonStyle.Secondary),
     ),
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`eb_removefield_${userId}`).setLabel('Remove Field').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`eb_addrolebtn_${userId}`).setLabel('Add Role Btn').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`eb_send_${userId}`).setLabel('Send').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`eb_save_${userId}`).setLabel('Save Only').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(`eb_cancel_${userId}`).setLabel('Cancel').setStyle(ButtonStyle.Danger),
@@ -196,9 +174,9 @@ function embedBuilderRows(userId) {
   ];
 }
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // CLIENT
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages,
@@ -207,25 +185,22 @@ const client = new Client({
   ],
 });
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // SLASH COMMANDS
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 const slashCommands = [
   new SlashCommandBuilder().setName('help').setDescription('Show all commands'),
   new SlashCommandBuilder().setName('tpanel').setDescription('Send the trading/middleman ticket panel'),
   new SlashCommandBuilder().setName('spanel').setDescription('Send the support ticket panel'),
-  new SlashCommandBuilder().setName('aipanel').setDescription('Send the AI Middleman panel'),
   new SlashCommandBuilder().setName('panel').setDescription('Send the trading ticket panel (alias)'),
   new SlashCommandBuilder().setName('setmmrole').setDescription('Set the middleman role').addRoleOption(o => o.setName('role').setDescription('MM role').setRequired(true)),
   new SlashCommandBuilder().setName('setcategory').setDescription('Set trading ticket category').addChannelOption(o => o.setName('category').setDescription('Category').setRequired(true)),
   new SlashCommandBuilder().setName('setsupportcategory').setDescription('Set support ticket category').addChannelOption(o => o.setName('category').setDescription('Category').setRequired(true)),
-  new SlashCommandBuilder().setName('setaicategory').setDescription('Set AI ticket category').addChannelOption(o => o.setName('category').setDescription('Category').setRequired(true)),
   new SlashCommandBuilder().setName('settranscriptchannel').setDescription('Set channel for ticket transcripts').addChannelOption(o => o.setName('channel').setDescription('Channel').setRequired(true)),
   new SlashCommandBuilder().setName('setsupportrole').setDescription('Set the role pinged for support tickets').addRoleOption(o => o.setName('role').setDescription('Support role').setRequired(true)),
   new SlashCommandBuilder().setName('setprefix').setDescription('Change the bot prefix').addStringOption(o => o.setName('prefix').setDescription('New prefix').setRequired(true)),
   new SlashCommandBuilder().setName('settradingpanelimage').setDescription('Set image on the trading panel embed').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
   new SlashCommandBuilder().setName('setsupportpanelimage').setDescription('Set image on the support panel embed').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
-  new SlashCommandBuilder().setName('setaipanelimage').setDescription('Set image on the AI panel embed').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
   new SlashCommandBuilder().setName('setticketimage').setDescription('Set image inside trading ticket channels').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
   new SlashCommandBuilder().setName('setsupportticketimage').setDescription('Set image inside support ticket channels').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
   new SlashCommandBuilder().setName('setpicture').setDescription('Set image on ALL panels and tickets at once').addAttachmentOption(o => o.setName('image').setDescription('Image').setRequired(true)),
@@ -233,11 +208,8 @@ const slashCommands = [
   new SlashCommandBuilder().setName('settpaneldesc').setDescription('Set the trading panel description').addStringOption(o => o.setName('description').setDescription('New description').setRequired(true)),
   new SlashCommandBuilder().setName('setspanetitle').setDescription('Set the support panel title').addStringOption(o => o.setName('title').setDescription('New title').setRequired(true)),
   new SlashCommandBuilder().setName('setspaneldesc').setDescription('Set the support panel description').addStringOption(o => o.setName('description').setDescription('New description').setRequired(true)),
-  new SlashCommandBuilder().setName('setaipaneltitle').setDescription('Set the AI panel title').addStringOption(o => o.setName('title').setDescription('New title').setRequired(true)),
-  new SlashCommandBuilder().setName('setaipaneldesc').setDescription('Set the AI panel description').addStringOption(o => o.setName('description').setDescription('New description').setRequired(true)),
   new SlashCommandBuilder().setName('settickettitle').setDescription('Set the trading ticket embed title').addStringOption(o => o.setName('title').setDescription('New title').setRequired(true)),
   new SlashCommandBuilder().setName('setsupporttickettitle').setDescription('Set the support ticket embed title').addStringOption(o => o.setName('title').setDescription('New title').setRequired(true)),
-  new SlashCommandBuilder().setName('setaisystemprompt').setDescription('Set a custom system prompt for the AI middleman').addStringOption(o => o.setName('prompt').setDescription('System prompt').setRequired(true)),
   new SlashCommandBuilder().setName('panelconfig').setDescription('View current panel configuration'),
   new SlashCommandBuilder().setName('renamep').setDescription('Rename panel text everywhere').addStringOption(o => o.setName('text').setDescription('New text').setRequired(true)),
   new SlashCommandBuilder().setName('panelembeds').setDescription('Manage embeds attached to panels'),
@@ -314,6 +286,32 @@ const slashCommands = [
   new SlashCommandBuilder().setName('daily').setDescription('Claim your daily coins'),
   new SlashCommandBuilder().setName('leaderboard').setDescription('Show the richest users'),
   new SlashCommandBuilder().setName('setcoins').setDescription('Set a user\'s coins (Admin)').addUserOption(o => o.setName('user').setDescription('User').setRequired(true)).addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true)),
+  // NEW COMMANDS
+  new SlashCommandBuilder().setName('escrowpanel').setDescription('Send the crypto escrow panel'),
+  new SlashCommandBuilder().setName('btc').setDescription('Check Bitcoin price'),
+  new SlashCommandBuilder().setName('eth').setDescription('Check Ethereum price'),
+  new SlashCommandBuilder().setName('ltc').setDescription('Check Litecoin price'),
+  new SlashCommandBuilder().setName('sol').setDescription('Check Solana price'),
+  new SlashCommandBuilder().setName('bal').setDescription('Check wallet balance').addStringOption(o => o.setName('address').setDescription('Wallet address').setRequired(true)),
+  new SlashCommandBuilder().setName('setaddy').setDescription('Save your wallet address').addStringOption(o => o.setName('coin').setDescription('btc/eth/ltc/sol/usdt/usdc').setRequired(true)).addStringOption(o => o.setName('address').setDescription('Wallet address').setRequired(true)),
+  new SlashCommandBuilder().setName('addy').setDescription('View your saved wallets'),
+  new SlashCommandBuilder().setName('mybal').setDescription('Check your saved wallet balances'),
+  new SlashCommandBuilder().setName('search').setDescription('View someone\'s saved wallets').addUserOption(o => o.setName('user').setDescription('User').setRequired(true)),
+  new SlashCommandBuilder().setName('coinflip').setDescription('Flip a coin'),
+  new SlashCommandBuilder().setName('dice').setDescription('Roll dice').addStringOption(o => o.setName('roll').setDescription('e.g. 2d6, 3d20').setRequired(true)),
+  new SlashCommandBuilder().setName('8ball').setDescription('Ask the magic 8ball').addStringOption(o => o.setName('question').setDescription('Your question').setRequired(true)),
+  new SlashCommandBuilder().setName('roast').setDescription('Roast someone').addUserOption(o => o.setName('user').setDescription('User').setRequired(true)),
+  new SlashCommandBuilder().setName('dih').setDescription('Do I have? Ask the bot'),
+  new SlashCommandBuilder().setName('steal').setDescription('Copy a custom emoji to your server').addStringOption(o => o.setName('emoji').setDescription('Emoji to steal').setRequired(true)),
+  new SlashCommandBuilder().setName('whopinged').setDescription('See who recently pinged you'),
+  new SlashCommandBuilder().setName('promote').setDescription('Promote a user').addUserOption(o => o.setName('user').setDescription('User').setRequired(true)).addRoleOption(o => o.setName('role').setDescription('Role to give').setRequired(true)).addStringOption(o => o.setName('reason').setDescription('Reason')),
+  new SlashCommandBuilder().setName('demote').setDescription('Demote a user').addUserOption(o => o.setName('user').setDescription('User').setRequired(true)).addRoleOption(o => o.setName('role').setDescription('Role to remove').setRequired(true)).addStringOption(o => o.setName('reason').setDescription('Reason')),
+  new SlashCommandBuilder().setName('revamp').setDescription('Revamp bot & server branding').addStringOption(o => o.setName('type').setDescription('botname/boticon/botbanner/servername/servericon').setRequired(true)).addStringOption(o => o.setName('value').setDescription('New value or URL').setRequired(true)),
+  new SlashCommandBuilder().setName('settings').setDescription('Bot settings').addStringOption(o => o.setName('setting').setDescription('ticketmode/spam/bankick/autovouch').setRequired(true)).addStringOption(o => o.setName('value').setDescription('value').setRequired(true)),
+  new SlashCommandBuilder().setName('setmodrole').setDescription('Set mod role for a command').addStringOption(o => o.setName('command').setDescription('ban/kick/roleadd').setRequired(true)).addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)),
+  new SlashCommandBuilder().setName('setviewtickets').setDescription('Set role that can view tickets').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)),
+  new SlashCommandBuilder().setName('setpromoteminrole').setDescription('Set minimum role for promote/demote').addRoleOption(o => o.setName('role').setDescription('Role').setRequired(true)),
+  new SlashCommandBuilder().setName('setpromotelog').setDescription('Set promote/demote log channel').addChannelOption(o => o.setName('channel').setDescription('Channel').setRequired(true)),
 ];
 
 async function registerSlashCommands() {
@@ -321,28 +319,64 @@ async function registerSlashCommands() {
   try {
     console.log('Registering slash commands...');
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: slashCommands.map(c => c.toJSON()) });
-    console.log('✅ Slash commands registered');
+    console.log('Slash commands registered');
   } catch (e) { console.error('Failed to register slash commands:', e); }
 }
 
 client.once('ready', async () => {
-  console.log(`✅ Bot online as ${client.user.tag}`);
+  console.log(`Bot online as ${client.user.tag}`);
   await registerSlashCommands();
 });
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // AFK TRACKING
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 const afkUsers = new Map();
+const pingHistory = new Map(); // userId -> [{pinger, time, channel}]
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// SPAM & RATE LIMIT PROTECTION
+// ═══════════════════════════════════════════════════════════════
+const messageTracker = new Map(); // userId -> [{time, mentions}]
+const banKickTracker = new Map(); // userId -> [timestamps]
+
+function checkSpam(userId, mentionCount) {
+  config = loadConfig();
+  if (!config.spamProtection) return false;
+  const now = Date.now();
+  if (!messageTracker.has(userId)) messageTracker.set(userId, []);
+  const logs = messageTracker.get(userId).filter(t => now - t.time < 10000);
+  logs.push({ time: now, mentions: mentionCount });
+  messageTracker.set(userId, logs);
+  const totalMentions = logs.reduce((a, b) => a + b.mentions, 0);
+  return totalMentions > 15;
+}
+
+function checkBanKickSpam(userId) {
+  config = loadConfig();
+  if (!config.banKickProtection) return false;
+  const now = Date.now();
+  if (!banKickTracker.has(userId)) banKickTracker.set(userId, []);
+  const logs = banKickTracker.get(userId).filter(t => now - t < 60000);
+  logs.push(now);
+  banKickTracker.set(userId, logs);
+  return logs.length > 5;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // AUTO ROLE ON JOIN
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 client.on('guildMemberAdd', async (member) => {
   config = loadConfig();
   if (config.autoRoleId) {
     const role = member.guild.roles.cache.get(config.autoRoleId);
     if (role) { try { await member.roles.add(role); } catch (e) { console.error('Auto-role failed:', e); } }
+  }
+  if (config.autoVouchEnabled) {
+    config = loadConfig();
+    if (!config.vouchData[member.id]) config.vouchData[member.id] = 0;
+    config.vouchData[member.id]++;
+    saveConfig(config);
   }
   if (!config.welcomeEnabled || !config.welcomeChannelId) return;
   const channel = member.guild.channels.cache.get(config.welcomeChannelId);
@@ -364,13 +398,22 @@ async function sendWelcomeMessage(channel, member) {
   await channel.send({ content: `👋 Welcome <@${member.id}>!`, embeds: [embed] });
 }
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // MESSAGE CREATE
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   config = loadConfig();
   const PREFIX = config.prefix;
+
+  // Spam protection
+  const mentionCount = message.mentions.users.size + message.mentions.roles.size;
+  if (mentionCount > 0 && checkSpam(message.author.id, mentionCount)) {
+    try { await message.delete(); } catch(e){}
+    const warn = await message.channel.send({ embeds: [new EmbedBuilder().setColor(COLORS.red).setDescription(`⚠️ <@${message.author.id}> Stop spamming mentions!`)] });
+    setTimeout(() => warn.delete().catch(()=>{}), 5000);
+    return;
+  }
 
   // AFK handling
   if (afkUsers.has(message.author.id)) {
@@ -384,25 +427,13 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // ── AI Middleman ticket — respond to messages ──
-  if (message.channel.name && message.channel.name.startsWith('ai-ticket-')) {
-    const history = aiTicketHistory.get(message.channel.id) || [];
-    history.push({ role: 'user', content: `${message.author.username}: ${message.content}` });
-    if (history.length > 20) history.splice(0, history.length - 20);
-    aiTicketHistory.set(message.channel.id, history);
-
-    const systemPrompt = config.aiSystemPrompt || getDefaultAISystemPrompt();
-    const aiReply = await callAI(history, systemPrompt);
-    if (aiReply) {
-      const embed = new EmbedBuilder()
-        .setColor(COLORS.ai)
-        .setDescription(aiReply)
-        .setFooter({ text: '🤖 AI Middleman • Roblox Values' });
-      await message.channel.send({ embeds: [embed] });
-      history.push({ role: 'assistant', content: aiReply });
-      aiTicketHistory.set(message.channel.id, history);
+  // Ping tracking
+  if (message.mentions.users.size > 0) {
+    for (const [uid] of message.mentions.users) {
+      if (!pingHistory.has(uid)) pingHistory.set(uid, []);
+      pingHistory.get(uid).push({ pinger: message.author.id, time: Date.now(), channel: message.channel.id });
+      if (pingHistory.get(uid).length > 20) pingHistory.get(uid).shift();
     }
-    return;
   }
 
   // yukic auto-trigger in ticket channels
@@ -434,22 +465,19 @@ client.on('messageCreate', async (message) => {
   const yukicName = (config.yukicCommandName || 'yukic').toLowerCase();
 
   const cmds = {
-    help: runHelp, tpanel: runTPanel, spanel: runSPanel, aipanel: runAIPanel, panel: runTPanel,
+    help: runHelp, tpanel: runTPanel, spanel: runSPanel, panel: runTPanel,
     setmmrole: runSetMMRole, setcategory: runSetCategory,
-    setsupportcategory: runSetSupportCategory, setaicategory: runSetAICategory,
+    setsupportcategory: runSetSupportCategory,
     settranscriptchannel: runSetTranscriptChannel,
     setsupportrole: runSetSupportRole, setprefix: runSetPrefix,
     settradingpanelimage: runSetTradingPanelImage,
     setsupportpanelimage: runSetSupportPanelImage,
-    setaipanelimage: runSetAIPanelImage,
     setticketimage: runSetTicketImage,
     setsupportticketimage: runSetSupportTicketImage,
     setpicture: runSetPicture,
     settpanetitle: runSetTPaneTitle, settpaneldesc: runSetTPaneDesc,
     setspanetitle: runSetSPaneTitle, setspaneldesc: runSetSPaneDesc,
-    setaipaneltitle: runSetAIPanelTitle, setaipaneldesc: runSetAIPanelDesc,
     settickettitle: runSetTicketTitle, setsupporttickettitle: runSetSupportTicketTitle,
-    setaisystemprompt: runSetAISystemPrompt,
     panelconfig: runPanelConfig, renamep: runRenamePanel,
     setrole: runSetRole, setyukicrole: runSetYukicRole,
     setyukicmessage: runSetYukicMessage, resetyukicmessage: runResetYukicMessage,
@@ -481,13 +509,30 @@ client.on('messageCreate', async (message) => {
     flip: runFlip, slots: runSlots, rob: runRob, daily: runDaily,
     leaderboard: runLeaderboard, lb: runLeaderboard,
     setcoins: runSetCoins,
+    // NEW
+    escrowpanel: runEscrowPanel,
+    btc: runCryptoPrice, eth: runCryptoPrice, ltc: runCryptoPrice, sol: runCryptoPrice,
+    bal: runWalletBal,
+    setaddy: runSetAddy, addy: runAddy, mybal: runMyBal, search: runSearch,
+    coinflip: runCoinFlip, dice: runDice, '8ball': run8Ball, roast: runRoast, dih: runDih,
+    steal: runSteal,
+    whopinged: runWhoPinged,
+    promote: runPromote, demote: runDemote,
+    revamp: runRevamp,
+    settings: runSettings,
+    setmodrole: runSetModRole,
+    setviewtickets: runSetViewTickets,
+    setpromoteminrole: runSetPromoteMinRole,
+    setpromotelog: runSetPromoteLog,
   };
-  if (cmds[command]) cmds[command](ctx);
+  if (cmds[command]) {
+    try { await cmds[command](ctx); } catch(e) { console.error(e); message.reply({ embeds: [new EmbedBuilder().setColor(COLORS.red).setDescription('❌ Something went wrong.')] }).catch(()=>{}); }
+  }
 });
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // INTERACTION HANDLER
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 client.on('interactionCreate', async (interaction) => {
   config = loadConfig();
 
@@ -502,22 +547,19 @@ client.on('interactionCreate', async (interaction) => {
       getChannelOption: (n) => interaction.options.getChannel(n),
     };
     const cmds = {
-      help: runHelp, tpanel: runTPanel, spanel: runSPanel, aipanel: runAIPanel, panel: runTPanel,
+      help: runHelp, tpanel: runTPanel, spanel: runSPanel, panel: runTPanel,
       setmmrole: runSetMMRole, setcategory: runSetCategory,
-      setsupportcategory: runSetSupportCategory, setaicategory: runSetAICategory,
+      setsupportcategory: runSetSupportCategory,
       settranscriptchannel: runSetTranscriptChannel,
       setsupportrole: runSetSupportRole, setprefix: runSetPrefix,
       settradingpanelimage: runSetTradingPanelImage,
       setsupportpanelimage: runSetSupportPanelImage,
-      setaipanelimage: runSetAIPanelImage,
       setticketimage: runSetTicketImage,
       setsupportticketimage: runSetSupportTicketImage,
       setpicture: runSetPicture,
       settpanetitle: runSetTPaneTitle, settpaneldesc: runSetTPaneDesc,
       setspanetitle: runSetSPaneTitle, setspaneldesc: runSetSPaneDesc,
-      setaipaneltitle: runSetAIPanelTitle, setaipaneldesc: runSetAIPanelDesc,
       settickettitle: runSetTicketTitle, setsupporttickettitle: runSetSupportTicketTitle,
-      setaisystemprompt: runSetAISystemPrompt,
       panelconfig: runPanelConfig, renamep: runRenamePanel, panelembeds: runPanelEmbeds,
       setrole: runSetRole, setyukicrole: runSetYukicRole,
       setyukicmessage: runSetYukicMessage, resetyukicmessage: runResetYukicMessage,
@@ -545,15 +587,26 @@ client.on('interactionCreate', async (interaction) => {
       backup: runBackup, restore: runRestore, backuplist: runBackupList, backupdelete: runBackupDelete,
       balance: runBalance, gamble: runGamble, flip: runFlip,
       slots: runSlots, rob: runRob, daily: runDaily, leaderboard: runLeaderboard, setcoins: runSetCoins,
+      // NEW
+      escrowpanel: runEscrowPanel,
+      btc: runCryptoPrice, eth: runCryptoPrice, ltc: runCryptoPrice, sol: runCryptoPrice,
+      bal: runWalletBal,
+      setaddy: runSetAddy, addy: runAddy, mybal: runMyBal, search: runSearch,
+      coinflip: runCoinFlip, dice: runDice, '8ball': run8Ball, roast: runRoast, dih: runDih,
+      steal: runSteal,
+      whopinged: runWhoPinged,
+      promote: runPromote, demote: runDemote,
+      revamp: runRevamp,
+      settings: runSettings,
+      setmodrole: runSetModRole,
+      setviewtickets: runSetViewTickets,
+      setpromoteminrole: runSetPromoteMinRole,
+      setpromotelog: runSetPromoteLog,
     };
-    if (cmds[interaction.commandName]) cmds[interaction.commandName](ctx);
+    if (cmds[interaction.commandName]) {
+      try { await cmds[interaction.commandName](ctx); } catch(e) { console.error(e); interaction.reply({ embeds: [new EmbedBuilder().setColor(COLORS.red).setDescription('❌ Something went wrong.')], ephemeral: true }).catch(()=>{}); }
+    }
     return;
-  }
-
-  // ── AI Panel button ──
-  if (interaction.isButton() && interaction.customId === 'open_ai_ticket') {
-    await interaction.deferReply({ ephemeral: true });
-    return createAITicket(interaction);
   }
 
   // ── Trading ticket type select ──
@@ -589,6 +642,19 @@ client.on('interactionCreate', async (interaction) => {
     return createSupportTicket(interaction, type, labelMap[type] || type);
   }
 
+  // ── Escrow crypto select ──
+  if (interaction.isStringSelectMenu() && interaction.customId === 'escrow_coin_select') {
+    const coin = interaction.values[0];
+    const modal = new ModalBuilder().setCustomId(`escrow_modal_${coin}`).setTitle(`Escrow — ${coin.toUpperCase()}`);
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('escrow_amount').setLabel('Amount').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('escrow_buyer').setLabel('Buyer Discord ID or @mention').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('escrow_seller').setLabel('Seller Discord ID or @mention').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('escrow_item').setLabel('What is being traded?').setStyle(TextInputStyle.Paragraph).setRequired(true)),
+    );
+    return interaction.showModal(modal);
+  }
+
   // ── Saved embeds select menu ──
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('embeds_select_')) {
     const userId = interaction.customId.replace('embeds_select_', '');
@@ -616,10 +682,9 @@ client.on('interactionCreate', async (interaction) => {
     config = loadConfig();
     if (panelType === 'tpanel') { if (!config.tpanelEmbedIds.includes(embedName)) config.tpanelEmbedIds.push(embedName); }
     else if (panelType === 'spanel') { if (!config.spanelEmbedIds.includes(embedName)) config.spanelEmbedIds.push(embedName); }
-    else if (panelType === 'apanel') { if (!config.apanelEmbedIds.includes(embedName)) config.apanelEmbedIds.push(embedName); }
     saveConfig(config);
     delete embedSessions[`panel_pick_${userId}`];
-    const labels = { tpanel: 'Trading Panel', spanel: 'Support Panel', apanel: 'AI Panel' };
+    const labels = { tpanel: 'Trading Panel', spanel: 'Support Panel' };
     return interaction.update({ content: `✅ Embed **${embedName}** attached to **${labels[panelType] || panelType}**!`, embeds: [], components: [] });
   }
 
@@ -633,11 +698,30 @@ client.on('interactionCreate', async (interaction) => {
     config = loadConfig();
     if (panelType === 'tpanel') config.tpanelEmbedIds = config.tpanelEmbedIds.filter(id => id !== embedName);
     else if (panelType === 'spanel') config.spanelEmbedIds = config.spanelEmbedIds.filter(id => id !== embedName);
-    else if (panelType === 'apanel') config.apanelEmbedIds = config.apanelEmbedIds.filter(id => id !== embedName);
     saveConfig(config);
     delete embedSessions[`panel_pick_${userId}`];
-    const labels = { tpanel: 'Trading Panel', spanel: 'Support Panel', apanel: 'AI Panel' };
+    const labels = { tpanel: 'Trading Panel', spanel: 'Support Panel' };
     return interaction.update({ content: `✅ Embed **${embedName}** detached from **${labels[panelType] || panelType}**!`, embeds: [], components: [] });
+  }
+
+  // ── Role buttons ──
+  if (interaction.isButton() && interaction.customId.startsWith('rolebtn_')) {
+    const roleId = interaction.customId.replace('rolebtn_', '');
+    const role = interaction.guild.roles.cache.get(roleId);
+    if (!role) return interaction.reply({ content: '❌ Role not found.', ephemeral: true });
+    const member = interaction.member;
+    if (member.roles.cache.has(role.id)) {
+      await member.roles.remove(role);
+      return interaction.reply({ content: `❌ Removed **${role.name}**`, ephemeral: true });
+    } else {
+      await member.roles.add(role);
+      return interaction.reply({ content: `✅ Added **${role.name}**`, ephemeral: true });
+    }
+  }
+
+  // ── Escrow buttons ──
+  if (interaction.isButton() && interaction.customId.startsWith('escrow_')) {
+    return handleEscrowButton(interaction);
   }
 
   if (interaction.isButton() && interaction.customId.startsWith('help_')) {
@@ -656,12 +740,17 @@ client.on('interactionCreate', async (interaction) => {
     await interaction.deferReply({ ephemeral: true });
     return createTradingTicket(interaction);
   }
+  if (interaction.isModalSubmit() && interaction.customId.startsWith('escrow_modal_')) {
+    await interaction.deferReply({ ephemeral: true });
+    return createEscrow(interaction);
+  }
 
   if (interaction.isButton()) {
     if (interaction.customId === 'claim_ticket') {
       config = loadConfig();
       const hasMmRole = config.mmRoleId && interaction.member.roles.cache.has(config.mmRoleId);
-      if (!hasMmRole && !interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+      const canView = config.viewTicketsRoleId && interaction.member.roles.cache.has(config.viewTicketsRoleId);
+      if (!hasMmRole && !canView && !interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
         return interaction.reply({ content: '❌ You need the Middleman role to claim this ticket.', ephemeral: true });
       }
       const claimRow = new ActionRowBuilder().addComponents(
@@ -698,7 +787,6 @@ client.on('interactionCreate', async (interaction) => {
         const canClose = ch.permissionOverwrites.cache.has(interaction.user.id);
         if (!canClose) return interaction.reply({ content: '❌ You cannot close this ticket.', ephemeral: true });
       }
-      aiTicketHistory.delete(ch.id);
       await interaction.reply({ content: '📄 Saving transcript and closing in 5 seconds...', ephemeral: false });
       await saveTranscript(ch, interaction.guild);
       return setTimeout(() => ch.delete().catch(() => {}), 5000);
@@ -737,9 +825,9 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // TRANSCRIPT HELPER
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function saveTranscript(channel, guild) {
   try {
     config = loadConfig();
@@ -766,33 +854,30 @@ async function saveTranscript(channel, guild) {
   } catch (e) { console.error('Transcript save failed:', e); }
 }
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // SAVED EMBEDS MENU
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 function buildEmbedsMenuPayload(userId, selectedName) {
   config = loadConfig();
   const saved = config.savedEmbeds || {};
   const names = Object.keys(saved);
-  const tpE = config.tpanelEmbedIds || [], spE = config.spanelEmbedIds || [], apE = config.apanelEmbedIds || [];
+  const tpE = config.tpanelEmbedIds || [], spE = config.spanelEmbedIds || [];
 
   let listLines = names.length === 0 ? ['*No saved embeds yet.*'] : names.map(n => {
     const tags = [];
     if (tpE.includes(n)) tags.push('**[Trading]**');
     if (spE.includes(n)) tags.push('**[Support]**');
-    if (apE.includes(n)) tags.push('**[AI]**');
     return `\`${n}\` — *${saved[n].title || 'untitled'}*${tags.length ? ' — ' + tags.join(' ') : ''}`;
   });
   listLines.push('─────────────────────────');
   listLines.push('`trading-panel` — *Trading Panel Embed*');
   listLines.push('`support-panel` — *Support Panel Embed*');
-  listLines.push('`ai-panel` — *AI Panel Embed*');
   listLines.push('─────────────────────────');
   listLines.push(selectedName ? `— selected: **${selectedName}**, or click Create New` : '— select one below, or click Create New');
 
   const options = names.slice(0, 21).map(n => ({ label: n, description: (saved[n].title || 'untitled').slice(0, 50), value: n }));
   options.push({ label: '🎫 Trading Panel', description: 'Edit trading panel embed', value: 'trading-panel', emoji: '🎫' });
   options.push({ label: '🎟️ Support Panel', description: 'Edit support panel embed', value: 'support-panel', emoji: '🎟️' });
-  options.push({ label: '🤖 AI Panel', description: 'Edit AI panel embed', value: 'ai-panel', emoji: '🤖' });
 
   const components = [];
   if (options.length > 0) {
@@ -815,12 +900,10 @@ function panelEmbedActionRows(userId, embedName) {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`panel_attach_tpanel_${userId}`).setLabel('Attach to Trading Panel').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`panel_attach_spanel_${userId}`).setLabel('Attach to Support Panel').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`panel_attach_apanel_${userId}`).setLabel('Attach to AI Panel').setStyle(ButtonStyle.Success),
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`panel_detach_tpanel_${userId}`).setLabel('Detach from Trading').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(`panel_detach_spanel_${userId}`).setLabel('Detach from Support').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId(`panel_detach_apanel_${userId}`).setLabel('Detach from AI').setStyle(ButtonStyle.Danger),
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`emb_close_${userId}`).setLabel('Close').setStyle(ButtonStyle.Secondary),
@@ -868,22 +951,20 @@ async function handleEmbedsAction(interaction) {
   }
   if (action === 'createnew') {
     delete embedSessions[`pick_${userId}`];
-    embedSessions[userId] = { title: null, description: null, color: COLORS.orange, author: null, authorIcon: null, footer: null, footerIcon: null, image: null, thumbnail: null, fields: [] };
+    embedSessions[userId] = { title: null, description: null, color: COLORS.orange, author: null, authorIcon: null, footer: null, footerIcon: null, image: null, thumbnail: null, fields: [], roleButtons: [] };
     const previewEmbed = new EmbedBuilder().setColor(COLORS.orange).setTitle('New Embed').setDescription('Click the buttons below to customize this embed.');
     return interaction.update({ content: '🛠️ **Embed Builder**', embeds: [previewEmbed], components: embedBuilderRows(userId) });
   }
   if (!selectedName) return interaction.reply({ content: '❌ Please select an embed first.', ephemeral: true });
 
-  // Panel edits
   const panelEditMap = {
     'trading-panel': { configTitle: 'tpanelTitle', configDesc: 'tpanelDescription', configImg: 'tpanelImageUrl', defaultTitle: 'Middleman Service', defaultDescFn: getDefaultTPanelDesc, storeKey: '__tpanel__' },
     'support-panel': { configTitle: 'spanelTitle', configDesc: 'spanelDescription', configImg: 'spanelImageUrl', defaultTitle: 'Support Ticket', defaultDescFn: getDefaultSPanelDesc, storeKey: '__spanel__' },
-    'ai-panel': { configTitle: 'apanelTitle', configDesc: 'apanelDescription', configImg: 'apanelImageUrl', defaultTitle: 'AI Middleman', defaultDescFn: getDefaultAPanelDesc, storeKey: '__apanel__' },
   };
   if (panelEditMap[selectedName]) {
     const pm = panelEditMap[selectedName];
     if (action === 'edit') {
-      embedSessions[userId] = { title: config[pm.configTitle] || pm.defaultTitle, description: config[pm.configDesc] || pm.defaultDescFn(), color: COLORS.orange, author: null, authorIcon: null, footer: null, footerIcon: null, image: config[pm.configImg] || null, thumbnail: null, fields: [] };
+      embedSessions[userId] = { title: config[pm.configTitle] || pm.defaultTitle, description: config[pm.configDesc] || pm.defaultDescFn(), color: COLORS.orange, author: null, authorIcon: null, footer: null, footerIcon: null, image: config[pm.configImg] || null, thumbnail: null, fields: [], roleButtons: [] };
       embedSessions[`editing_${userId}`] = pm.storeKey;
       return interaction.update({ content: `🛠️ **Editing: ${selectedName}**`, embeds: [buildEmbedFromSession(embedSessions[userId])], components: embedBuilderRows(userId) });
     }
@@ -894,7 +975,8 @@ async function handleEmbedsAction(interaction) {
   const savedSession = config.savedEmbeds[selectedName];
   if (!savedSession) return interaction.reply({ content: '❌ Embed not found.', ephemeral: true });
   if (action === 'send') {
-    await interaction.channel.send({ embeds: [buildEmbedFromSession(savedSession)] });
+    const components = buildRoleButtonRows(savedSession.roleButtons);
+    await interaction.channel.send({ embeds: [buildEmbedFromSession(savedSession)], components });
     return interaction.update({ content: `✅ Sent embed **${selectedName}**!`, embeds: [], components: [] });
   }
   if (action === 'edit') {
@@ -906,16 +988,29 @@ async function handleEmbedsAction(interaction) {
     delete config.savedEmbeds[selectedName];
     config.tpanelEmbedIds = (config.tpanelEmbedIds || []).filter(id => id !== selectedName);
     config.spanelEmbedIds = (config.spanelEmbedIds || []).filter(id => id !== selectedName);
-    config.apanelEmbedIds = (config.apanelEmbedIds || []).filter(id => id !== selectedName);
     saveConfig(config);
     delete embedSessions[`pick_${userId}`];
     return interaction.update({ content: `🗑️ Deleted embed **${selectedName}**.`, embeds: [], components: [] });
   }
 }
 
-// ─────────────────────────────────────────────────────────────
+function buildRoleButtonRows(roleButtons) {
+  if (!roleButtons || roleButtons.length === 0) return [];
+  const rows = [];
+  let currentRow = new ActionRowBuilder();
+  for (let i = 0; i < roleButtons.length; i++) {
+    if (currentRow.components.length >= 5) { rows.push(currentRow); currentRow = new ActionRowBuilder(); }
+    currentRow.addComponents(
+      new ButtonBuilder().setCustomId(`rolebtn_${roleButtons[i].roleId}`).setLabel(roleButtons[i].label).setStyle(ButtonStyle[roleButtons[i].style] || ButtonStyle.Primary)
+    );
+  }
+  if (currentRow.components.length > 0) rows.push(currentRow);
+  return rows;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // EMBED BUILDER
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function handleEmbedBuilderButton(interaction) {
   const withoutPrefix = interaction.customId.slice(3);
   const underscoreIdx = withoutPrefix.indexOf('_');
@@ -930,13 +1025,13 @@ async function handleEmbedBuilderButton(interaction) {
   }
   if (action === 'send') {
     const built = buildEmbedFromSession(session);
-    await interaction.channel.send({ embeds: [built] });
+    const components = buildRoleButtonRows(session.roleButtons);
+    await interaction.channel.send({ embeds: [built], components });
     const editingName = embedSessions[`editing_${userId}`];
     if (editingName) {
       config = loadConfig();
       if (editingName === '__tpanel__') { config.tpanelTitle = session.title || config.tpanelTitle; config.tpanelDescription = session.description || null; if (session.image) config.tpanelImageUrl = session.image; }
       else if (editingName === '__spanel__') { config.spanelTitle = session.title || config.spanelTitle; config.spanelDescription = session.description || null; if (session.image) config.spanelImageUrl = session.image; }
-      else if (editingName === '__apanel__') { config.apanelTitle = session.title || config.apanelTitle; config.apanelDescription = session.description || null; if (session.image) config.apanelImageUrl = session.image; }
       else { config.savedEmbeds[editingName] = JSON.parse(JSON.stringify(session)); }
       saveConfig(config);
       delete embedSessions[`editing_${userId}`];
@@ -950,7 +1045,6 @@ async function handleEmbedBuilderButton(interaction) {
       config = loadConfig();
       if (editingName === '__tpanel__') { config.tpanelTitle = session.title || config.tpanelTitle; config.tpanelDescription = session.description || null; if (session.image) config.tpanelImageUrl = session.image; saveConfig(config); delete embedSessions[userId]; delete embedSessions[`editing_${userId}`]; return interaction.update({ content: '✅ Trading Panel updated!', embeds: [], components: [] }); }
       else if (editingName === '__spanel__') { config.spanelTitle = session.title || config.spanelTitle; config.spanelDescription = session.description || null; if (session.image) config.spanelImageUrl = session.image; saveConfig(config); delete embedSessions[userId]; delete embedSessions[`editing_${userId}`]; return interaction.update({ content: '✅ Support Panel updated!', embeds: [], components: [] }); }
-      else if (editingName === '__apanel__') { config.apanelTitle = session.title || config.apanelTitle; config.apanelDescription = session.description || null; if (session.image) config.apanelImageUrl = session.image; saveConfig(config); delete embedSessions[userId]; delete embedSessions[`editing_${userId}`]; return interaction.update({ content: '✅ AI Panel updated!', embeds: [], components: [] }); }
       else { config.savedEmbeds[editingName] = JSON.parse(JSON.stringify(session)); saveConfig(config); delete embedSessions[userId]; delete embedSessions[`editing_${userId}`]; return interaction.update({ content: `✅ Embed **${editingName}** updated!`, embeds: [], components: [] }); }
     }
     const modal = new ModalBuilder().setCustomId(`ebm_savename_${userId}`).setTitle('Save Embed');
@@ -961,6 +1055,15 @@ async function handleEmbedBuilderButton(interaction) {
     if (session.fields.length === 0) return interaction.reply({ content: '❌ No fields to remove.', ephemeral: true });
     session.fields.pop();
     return interaction.update({ embeds: [buildEmbedFromSession(session)], components: embedBuilderRows(userId) });
+  }
+  if (action === 'addrolebtn') {
+    const modal = new ModalBuilder().setCustomId(`ebm_addrolebtn_${userId}`).setTitle('Add Role Button');
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('rolebtn_role').setLabel('Role ID or @mention').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('rolebtn_label').setLabel('Button label').setStyle(TextInputStyle.Short).setRequired(true)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('rolebtn_style').setLabel('Style: Primary/Secondary/Success/Danger').setStyle(TextInputStyle.Short).setRequired(false)),
+    );
+    return interaction.showModal(modal);
   }
 
   const modalDefs = {
@@ -1006,6 +1109,16 @@ async function handleEmbedBuilderModal(interaction) {
     delete embedSessions[userId];
     return interaction.update({ content: `✅ Embed saved as **${name}**!`, embeds: [], components: [] });
   }
+  if (action === 'addrolebtn') {
+    const roleInput = interaction.fields.getTextInputValue('rolebtn_role');
+    const label = interaction.fields.getTextInputValue('rolebtn_label');
+    const style = interaction.fields.getTextInputValue('rolebtn_style') || 'Primary';
+    const roleMatch = roleInput.match(/^<@&(\d+)>$/) || roleInput.match(/^(\d+)$/);
+    const roleId = roleMatch ? roleMatch[1] : roleInput;
+    if (!session.roleButtons) session.roleButtons = [];
+    session.roleButtons.push({ roleId, label, style });
+    return interaction.update({ content: '🛠️ **Embed Builder**', embeds: [buildEmbedFromSession(session)], components: embedBuilderRows(userId) });
+  }
   if (action === 'addfield') {
     const name = interaction.fields.getTextInputValue('field_name');
     const value = interaction.fields.getTextInputValue('field_value');
@@ -1029,9 +1142,9 @@ async function handleEmbedBuilderModal(interaction) {
   } catch(e) { await interaction.reply({ content: '✅ Updated!', ephemeral: true }); }
 }
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // DEFAULT DESCRIPTIONS
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 function getDefaultTPanelDesc() {
   const pt = config.panelText || 'Roblox Values';
   return `Welcome to **${pt}** Middleman Service Centre.\n\nAt **${pt}**, we value and provide a safe and secure way to exchange your goods.\n\n**If you've found a trade and want to ensure your safety, use our middleman service.**\n\n───\n**Usage Conditions:**\n• Both parties agree to trade before requesting a middleman.\n• State the trade and value.\n• Fake or troll tickets will result in punishments.`;
@@ -1040,39 +1153,10 @@ function getDefaultSPanelDesc() {
   const pt = config.panelText || 'Roblox Values';
   return `Welcome to **${pt}**.\n\nThis panel is for Staff Applications, Reports, and General Assistance.\n\n───\n**Usage Conditions:**\n• Select the correct category.\n• Provide complete and honest information.\n• Treat staff with respect at all times.`;
 }
-function getDefaultAPanelDesc() {
-  const pt = config.panelText || 'Roblox Values';
-  return (
-    `Welcome to **${pt}** — AI Middleman Service.\n\n` +
-    `🤖 Our **AI Middleman** is available 24/7 to assist and guide you through your trade safely and professionally.\n\n` +
-    `**What the AI does:**\n` +
-    `• Greets you and collects your trade details\n` +
-    `• Reviews your trade for any scam indicators\n` +
-    `• Guides both parties step-by-step through the trade\n` +
-    `• Answers any questions about the process\n\n` +
-    `───\n` +
-    `**Usage Conditions:**\n` +
-    `• Be honest about your trade details.\n` +
-    `• Follow the AI's instructions carefully.\n` +
-    `• Human staff can be requested at any time.\n` +
-    `• Fake or troll tickets will result in punishment.`
-  );
-}
-function getDefaultAISystemPrompt() {
-  return (
-    `You are an expert, trusted AI Middleman for a Roblox trading server called "Roblox Values". ` +
-    `Your job is to safely guide trades between users. ` +
-    `When a ticket opens, you greet both parties, ask for trade details (what is being traded, values, usernames), ` +
-    `then review the trade for any scam indicators (low-value offers, suspicious requests, pressure tactics). ` +
-    `Guide them step-by-step: first confirm both parties agree, then instruct the seller to hold until payment is confirmed, then confirm completion. ` +
-    `Be professional, friendly, and concise. If something seems scammy, flag it clearly. ` +
-    `Always remind users that human staff can be requested. Keep responses under 300 words.`
-  );
-}
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // HELP
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 function hasHelpAccess(ctx) {
   config = loadConfig();
   if (!config.helpRoleId) return true;
@@ -1093,7 +1177,6 @@ async function showHelpSection(interaction, section) {
       commands: [
         { name: `${P}tpanel / /tpanel`, desc: 'Send the **trading** ticket panel' },
         { name: `${P}spanel / /spanel`, desc: 'Send the **support** ticket panel' },
-        { name: `${P}aipanel / /aipanel`, desc: 'Send the **AI Middleman** panel' },
         { name: `${P}close / /close`, desc: 'Close the current ticket' },
         { name: `${P}claim / /claim`, desc: 'Claim a ticket' },
         { name: `${P}unclaim / /unclaim`, desc: 'Unclaim a ticket' },
@@ -1104,8 +1187,8 @@ async function showHelpSection(interaction, section) {
         { name: `${P}transfer @staff`, desc: 'Transfer ticket to another staff member' },
         { name: `${P}setcategory #cat`, desc: 'Set trading ticket category' },
         { name: `${P}setsupportcategory #cat`, desc: 'Set support ticket category' },
-        { name: `${P}setaicategory #cat`, desc: 'Set AI ticket category' },
         { name: `${P}settranscriptchannel #ch`, desc: 'Set channel for auto-transcripts' },
+        { name: `${P}settings ticketmode channel/thread`, desc: 'Toggle ticket mode' },
       ],
     },
     middleman: {
@@ -1121,16 +1204,19 @@ async function showHelpSection(interaction, section) {
         { name: `${P}vacationcancel / vc`, desc: 'End vacation early' },
       ],
     },
-    aipanel: {
-      emoji: '🤖', name: 'AI Middleman', color: COLORS.ai,
+    crypto: {
+      emoji: '💎', name: 'Crypto', color: COLORS.crypto,
       commands: [
-        { name: `${P}aipanel / /aipanel`, desc: 'Send the AI Middleman panel to a channel' },
-        { name: `${P}setaicategory #cat`, desc: 'Set which category AI tickets go into' },
-        { name: `${P}setaipanelimage`, desc: 'Set image on the AI panel embed' },
-        { name: `${P}setaipaneltitle <title>`, desc: 'Set the AI panel title' },
-        { name: `${P}setaipaneldesc <desc>`, desc: 'Set the AI panel description' },
-        { name: `${P}setaisystemprompt <prompt>`, desc: 'Customize how the AI behaves in tickets' },
-        { name: 'ANTHROPIC_API_KEY', desc: 'Add this to your .env file to enable AI responses' },
+        { name: `${P}btc / /btc`, desc: 'Check Bitcoin price' },
+        { name: `${P}eth / /eth`, desc: 'Check Ethereum price' },
+        { name: `${P}ltc / /ltc`, desc: 'Check Litecoin price' },
+        { name: `${P}sol / /sol`, desc: 'Check Solana price' },
+        { name: `${P}bal <address>`, desc: 'Check any wallet balance' },
+        { name: `${P}setaddy <coin> <address>`, desc: 'Save your wallet' },
+        { name: `${P}addy`, desc: 'View your saved wallets' },
+        { name: `${P}mybal`, desc: 'Check your saved wallet balances' },
+        { name: `${P}search @user`, desc: 'View someone\'s saved wallets' },
+        { name: `${P}escrowpanel / /escrowpanel`, desc: 'Send crypto escrow panel' },
       ],
     },
     yukic: {
@@ -1172,6 +1258,8 @@ async function showHelpSection(interaction, section) {
         { name: `${P}lock`, desc: 'Lock channel' },
         { name: `${P}unlock`, desc: 'Unlock channel' },
         { name: `${P}slowmode <seconds>`, desc: 'Set slowmode' },
+        { name: `${P}promote @user @role [reason]`, desc: 'Promote a user' },
+        { name: `${P}demote @user @role [reason]`, desc: 'Demote a user' },
       ],
     },
     fun: {
@@ -1186,6 +1274,13 @@ async function showHelpSection(interaction, section) {
         { name: `${P}nickname @user [name]`, desc: 'Set/reset nickname' },
         { name: `${P}fill`, desc: 'Give yourself all roles below yours' },
         { name: `${P}afk [reason]`, desc: 'Mark yourself as AFK' },
+        { name: `${P}coinflip`, desc: 'Flip a coin' },
+        { name: `${P}dice <2d6>`, desc: 'Roll dice' },
+        { name: `${P}8ball <question>`, desc: 'Magic 8ball' },
+        { name: `${P}roast @user`, desc: 'Roast someone' },
+        { name: `${P}dih`, desc: 'Do I have?' },
+        { name: `${P}steal <emoji>`, desc: 'Copy custom emoji' },
+        { name: `${P}whopinged`, desc: 'See who pinged you' },
       ],
     },
     info: {
@@ -1208,7 +1303,6 @@ async function showHelpSection(interaction, section) {
         { name: `${P}setsupportrole @role`, desc: 'Set support ping role' },
         { name: `${P}setcategory #cat`, desc: 'Set trading ticket category' },
         { name: `${P}setsupportcategory #cat`, desc: 'Set support ticket category' },
-        { name: `${P}setaicategory #cat`, desc: 'Set AI ticket category' },
         { name: `${P}settranscriptchannel #ch`, desc: 'Set transcript log channel' },
         { name: `${P}setprefix <char>`, desc: 'Change prefix' },
         { name: `${P}setpicture`, desc: 'Set one image on ALL panels & tickets' },
@@ -1217,6 +1311,9 @@ async function showHelpSection(interaction, section) {
         { name: `${P}setautorole @role`, desc: 'Auto-give role on join' },
         { name: `${P}backup <name>`, desc: 'Backup server config' },
         { name: `${P}restore <name>`, desc: 'Restore a backup' },
+        { name: `${P}revamp`, desc: 'Revamp bot & server branding' },
+        { name: `${P}settings`, desc: 'Toggle bot settings' },
+        { name: `${P}setmodrole`, desc: 'Set mod roles for commands' },
       ],
     },
   };
@@ -1234,7 +1331,7 @@ function buildHelpMenuEmbed() {
     .addFields(
       { name: '🎫 Tickets', value: 'Ticket panels, management & transcripts', inline: true },
       { name: '🤝 Middleman', value: 'MM service, vouches & vacation', inline: true },
-      { name: '🤖 AI Middleman', value: 'AI-powered middleman system', inline: true },
+      { name: '💎 Crypto', value: 'Prices, wallets & escrow', inline: true },
       { name: '🎁 Offer System', value: 'Yukic offer with Accept/Decline', inline: true },
       { name: '🎰 Gambling', value: 'Coins, gamble, slots, rob & more', inline: true },
       { name: '🔨 Moderation', value: 'Ban, kick, mute, warn & more', inline: true },
@@ -1249,7 +1346,7 @@ function buildHelpMenuRows() {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('help_tickets').setLabel('🎫 Tickets').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('help_middleman').setLabel('🤝 Middleman').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('help_aipanel').setLabel('🤖 AI MM').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('help_crypto').setLabel('💎 Crypto').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('help_yukic').setLabel('🎁 Offer').setStyle(ButtonStyle.Primary),
     ),
     new ActionRowBuilder().addComponents(
@@ -1262,9 +1359,9 @@ function buildHelpMenuRows() {
   ];
 }
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // COMMANDS
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function runHelp(ctx) {
   if (!hasHelpAccess(ctx)) return reply(ctx, { content: '❌ You do not have permission to use the help command.', ephemeral: true });
   await reply(ctx, { embeds: [buildHelpMenuEmbed()], components: buildHelpMenuRows() });
@@ -1273,7 +1370,7 @@ async function runHelp(ctx) {
 async function runEmbed(ctx) {
   if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need **Manage Server** permission.', ephemeral: true });
   const userId = ctx.isSlash ? ctx.interaction.user.id : ctx.message.author.id;
-  embedSessions[userId] = { title: null, description: null, color: COLORS.orange, author: null, authorIcon: null, footer: null, footerIcon: null, image: null, thumbnail: null, fields: [] };
+  embedSessions[userId] = { title: null, description: null, color: COLORS.orange, author: null, authorIcon: null, footer: null, footerIcon: null, image: null, thumbnail: null, fields: [], roleButtons: [] };
   const previewEmbed = new EmbedBuilder().setColor(COLORS.orange).setTitle('New Embed').setDescription('Click the buttons below to customize this embed.');
   if (ctx.isSlash) await ctx.interaction.reply({ content: '🛠️ **Embed Builder**', embeds: [previewEmbed], components: embedBuilderRows(userId), ephemeral: true });
   else await ctx.message.reply({ content: '🛠️ **Embed Builder**', embeds: [previewEmbed], components: embedBuilderRows(userId) });
@@ -1299,11 +1396,8 @@ async function runRenamePanel(ctx) {
   config.tpanelDescription = replaceInStr(config.tpanelDescription);
   config.spanelTitle = replaceInStr(config.spanelTitle);
   config.spanelDescription = replaceInStr(config.spanelDescription);
-  config.apanelTitle = replaceInStr(config.apanelTitle);
-  config.apanelDescription = replaceInStr(config.apanelDescription);
   config.ticketTitle = replaceInStr(config.ticketTitle);
   config.supportTicketTitle = replaceInStr(config.supportTicketTitle);
-  config.aiTicketTitle = replaceInStr(config.aiTicketTitle);
   config.welcomeTitle = replaceInStr(config.welcomeTitle);
   config.welcomeMessage = replaceInStr(config.welcomeMessage);
   saveConfig(config);
@@ -1361,35 +1455,6 @@ async function runSPanel(ctx) {
   else await ctx.message.reply('✅ Support panel sent!');
 }
 
-// ── AI Panel ──
-async function runAIPanel(ctx) {
-  if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need **Manage Server** permission.', ephemeral: true });
-  config = loadConfig();
-  const embeds = [];
-
-  const mainEmbed = new EmbedBuilder()
-    .setColor(COLORS.ai)
-    .setTitle(config.apanelTitle || 'AI Middleman')
-    .setDescription(config.apanelDescription || getDefaultAPanelDesc())
-    .setFooter({ text: '🤖 Powered by AI — Available 24/7 • Roblox Values' })
-    .setTimestamp();
-  if (config.apanelImageUrl) mainEmbed.setImage(config.apanelImageUrl);
-  embeds.push(mainEmbed);
-
-  for (const embedId of (config.apanelEmbedIds || [])) {
-    if (config.savedEmbeds?.[embedId]) embeds.push(buildEmbedFromSession(config.savedEmbeds[embedId]));
-  }
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('open_ai_ticket').setLabel('🤖 Open AI Middleman Ticket').setStyle(ButtonStyle.Primary),
-  );
-
-  const channel = ctx.isSlash ? ctx.interaction.channel : ctx.channel;
-  await channel.send({ embeds, components: [row] });
-  if (ctx.isSlash) await ctx.interaction.reply({ content: '✅ AI Middleman panel sent!', ephemeral: true });
-  else await ctx.message.reply('✅ AI Middleman panel sent!');
-}
-
 // ── Image/Title/Desc setters ──
 async function runSetTradingPanelImage(ctx) {
   if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
@@ -1404,13 +1469,6 @@ async function runSetSupportPanelImage(ctx) {
   if (!imageUrl) return reply(ctx, { content: '❌ Please attach an image.' });
   config = loadConfig(); config.spanelImageUrl = imageUrl; saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Support panel image updated!').setImage(imageUrl)] });
-}
-async function runSetAIPanelImage(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
-  const imageUrl = ctx.isSlash ? ctx.interaction.options.getAttachment('image')?.url : ctx.message.attachments.first()?.url;
-  if (!imageUrl) return reply(ctx, { content: '❌ Please attach an image.' });
-  config = loadConfig(); config.apanelImageUrl = imageUrl; saveConfig(config);
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ AI panel image updated!').setImage(imageUrl)] });
 }
 async function runSetTicketImage(ctx) {
   if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
@@ -1431,7 +1489,7 @@ async function runSetPicture(ctx) {
   const imageUrl = ctx.isSlash ? ctx.interaction.options.getAttachment('image')?.url : ctx.message.attachments.first()?.url;
   if (!imageUrl) return reply(ctx, { content: '❌ Please attach an image.' });
   config = loadConfig();
-  config.panelImageUrl = config.tpanelImageUrl = config.spanelImageUrl = config.apanelImageUrl = config.ticketImageUrl = config.supportTicketImageUrl = config.aiTicketImageUrl = imageUrl;
+  config.panelImageUrl = config.tpanelImageUrl = config.spanelImageUrl = config.ticketImageUrl = config.supportTicketImageUrl = imageUrl;
   saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Image updated on **all** panels and tickets!').setImage(imageUrl)] });
 }
@@ -1463,27 +1521,6 @@ async function runSetSPaneDesc(ctx) {
   config = loadConfig(); config.spanelDescription = desc.replace(/\\n/g, '\n'); saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Support panel description updated.')] });
 }
-async function runSetAIPanelTitle(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
-  const title = ctx.isSlash ? ctx.getOption('title') : ctx.args.join(' ');
-  if (!title) return reply(ctx, { content: '❌ Please provide a title.' });
-  config = loadConfig(); config.apanelTitle = title; saveConfig(config);
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ AI panel title: **${title}**`)] });
-}
-async function runSetAIPanelDesc(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
-  const desc = ctx.isSlash ? ctx.getOption('description') : ctx.args.join(' ');
-  if (!desc) return reply(ctx, { content: '❌ Please provide a description.' });
-  config = loadConfig(); config.apanelDescription = desc.replace(/\\n/g, '\n'); saveConfig(config);
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ AI panel description updated.')] });
-}
-async function runSetAISystemPrompt(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
-  const prompt = ctx.isSlash ? ctx.getOption('prompt') : ctx.args.join(' ');
-  if (!prompt) return reply(ctx, { content: '❌ Please provide a prompt.' });
-  config = loadConfig(); config.aiSystemPrompt = prompt; saveConfig(config);
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ AI system prompt updated.').addFields({ name: 'New Prompt', value: prompt.slice(0, 1000) })] });
-}
 async function runSetTicketTitle(ctx) {
   if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
   const title = ctx.isSlash ? ctx.getOption('title') : ctx.args.join(' ');
@@ -1506,20 +1543,16 @@ async function runPanelConfig(ctx) {
       { name: '📝 Panel Text', value: config.panelText || 'Roblox Values', inline: true },
       { name: '📋 Trading Panel Title', value: config.tpanelTitle || 'Middleman Service', inline: true },
       { name: '📋 Support Panel Title', value: config.spanelTitle || 'Support Ticket', inline: true },
-      { name: '🤖 AI Panel Title', value: config.apanelTitle || 'AI Middleman', inline: true },
       { name: '🎫 Trading Ticket Title', value: config.ticketTitle || 'Ticket Opened', inline: true },
       { name: '🎫 Support Ticket Title', value: config.supportTicketTitle || 'Support Ticket', inline: true },
-      { name: '🤖 AI Ticket Title', value: config.aiTicketTitle || 'AI Middleman Ticket', inline: true },
       { name: '🖼️ Trading Panel Image', value: config.tpanelImageUrl ? '✅ Set' : '❌ Not set', inline: true },
       { name: '🖼️ Support Panel Image', value: config.spanelImageUrl ? '✅ Set' : '❌ Not set', inline: true },
-      { name: '🖼️ AI Panel Image', value: config.apanelImageUrl ? '✅ Set' : '❌ Not set', inline: true },
       { name: '🤝 MM Role', value: config.mmRoleId ? `<@&${config.mmRoleId}>` : '❌ Not set', inline: true },
       { name: '🆘 Support Role', value: config.supportRoleId ? `<@&${config.supportRoleId}>` : '❌ Not set', inline: true },
       { name: '📁 Trading Category', value: config.ticketCategoryId ? `<#${config.ticketCategoryId}>` : '❌ Not set', inline: true },
       { name: '📁 Support Category', value: config.supportCategoryId ? `<#${config.supportCategoryId}>` : '❌ Not set', inline: true },
-      { name: '📁 AI Category', value: config.aiCategoryId ? `<#${config.aiCategoryId}>` : '❌ Not set', inline: true },
       { name: '📄 Transcript Channel', value: config.transcriptChannelId ? `<#${config.transcriptChannelId}>` : '❌ Not set', inline: true },
-      { name: '🧠 AI System Prompt', value: config.aiSystemPrompt ? '✅ Custom set' : '✅ Using default', inline: true },
+      { name: '🧵 Ticket Mode', value: config.ticketMode || 'channel', inline: true },
     )
   ] });
 }
@@ -1557,13 +1590,6 @@ async function runSetSupportCategory(ctx) {
   if (!cat) return reply(ctx, { content: '❌ Please mention a category.' });
   config = loadConfig(); config.supportCategoryId = cat.id; saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Support ticket category: **${cat.name}**`)] });
-}
-async function runSetAICategory(ctx) {
-  if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ Manage Server only.' });
-  const cat = ctx.isSlash ? ctx.getChannelOption('category') : ctx.message.mentions.channels.first();
-  if (!cat) return reply(ctx, { content: '❌ Please mention a category.' });
-  config = loadConfig(); config.aiCategoryId = cat.id; saveConfig(config);
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ AI ticket category: **${cat.name}**`)] });
 }
 async function runSetPrefix(ctx) {
   if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ Manage Server only.' });
@@ -1712,39 +1738,39 @@ async function runTestWelcome(ctx) {
 
 // Yukic
 async function runSetYukicName(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
   const name = (ctx.isSlash ? ctx.getOption('name') : ctx.args[0] || '').toLowerCase().replace(/\s+/g, '');
-  if (!name) return reply(ctx, { content: '❌ Please provide a name.' });
+  if (!name) return reply(ctx, { content: '❌ Please provide a name.', ephemeral: true });
   config = loadConfig(); config.yukicCommandName = name; saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Offer command renamed to \`${config.prefix}${name}\``)] });
 }
 async function runSetRole(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
   const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
-  if (!role) return reply(ctx, { content: '❌ Please mention a role.' });
+  if (!role) return reply(ctx, { content: '❌ Please mention a role.', ephemeral: true });
   config = loadConfig(); config.yukicTriggerRoleId = role.id; saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Yukic trigger role: **${role.name}**.`)] });
 }
 async function runSetYukicRole(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
   const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
-  if (!role) return reply(ctx, { content: '❌ Please mention a role.' });
+  if (!role) return reply(ctx, { content: '❌ Please mention a role.', ephemeral: true });
   config = loadConfig(); config.yukicAcceptRoleId = role.id; saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Yukic accept role: **${role.name}**.`)] });
 }
 async function runSetYukicMessage(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
   config = loadConfig();
-  if (config.yukicMessage) return reply(ctx, { content: `❌ Already set. Use \`${config.prefix}resetyukicmessage\` to reset.` });
+  if (config.yukicMessage) return reply(ctx, { content: `❌ Already set. Use \`${config.prefix}resetyukicmessage\` to reset.`, ephemeral: true });
   const msg = ctx.isSlash ? ctx.getOption('message') : ctx.args.join(' ');
-  if (!msg) return reply(ctx, { content: '❌ Please provide a message.' });
+  if (!msg) return reply(ctx, { content: '❌ Please provide a message.', ephemeral: true });
   config.yukicMessage = msg; saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setTitle('✅ Yukic Message Set').setDescription(msg)] });
 }
 async function runResetYukicMessage(ctx) {
-  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
   config = loadConfig();
-  if (!config.yukicMessage) return reply(ctx, { content: '❌ No yukic message set.' });
+  if (!config.yukicMessage) return reply(ctx, { content: '❌ No yukic message set.', ephemeral: true });
   config.yukicMessage = null; saveConfig(config);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Yukic message reset.')] });
 }
@@ -1756,10 +1782,10 @@ async function runYukic(ctx) {
     if (triggerRole) hasAccess = ctx.member.roles.highest.position >= triggerRole.position;
   }
   if (!hasAccess) return reply(ctx, { content: '❌ You do not have permission.', ephemeral: true });
-  if (!config.yukicMessage) return reply(ctx, { content: `❌ No offer message set.` });
+  if (!config.yukicMessage) return reply(ctx, { content: `❌ No offer message set.`, ephemeral: true });
   const target = ctx.isSlash ? ctx.getMemberOption('user') : ctx.message.mentions.members.first();
-  if (!target) return reply(ctx, { content: '❌ Please mention a user.' });
-  if (target.user.bot) return reply(ctx, { content: '❌ Cannot send to a bot.' });
+  if (!target) return reply(ctx, { content: '❌ Please mention a user.', ephemeral: true });
+  if (target.user.bot) return reply(ctx, { content: '❌ Cannot send to a bot.', ephemeral: true });
   const embed = new EmbedBuilder().setColor(COLORS.orange).setDescription(config.yukicMessage).setThumbnail(target.user.displayAvatarURL());
   if (config.panelImageUrl) embed.setImage(config.panelImageUrl);
   const row = new ActionRowBuilder().addComponents(
@@ -1775,21 +1801,22 @@ async function runYukic(ctx) {
 // Tickets
 async function runClose(ctx) {
   const channel = ctx.isSlash ? ctx.interaction.channel : ctx.channel;
-  if (!channel.name.startsWith('ticket-') && !channel.name.startsWith('ai-ticket-')) return reply(ctx, { content: '❌ This command can only be used inside a ticket channel.' });
+  if (!channel.name.startsWith('ticket-')) return reply(ctx, { content: '❌ This command can only be used inside a ticket channel.' });
   await reply(ctx, { content: '📄 Saving transcript and closing in 5 seconds...' });
-  aiTicketHistory.delete(channel.id);
   await saveTranscript(channel, ctx.guild);
   setTimeout(() => channel.delete().catch(() => {}), 5000);
 }
 async function runClaim(ctx) {
   const hasMmRole = config.mmRoleId && ctx.member.roles.cache.has(config.mmRoleId);
-  if (!hasMmRole && !hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need the Middleman role to claim a ticket.' });
+  const canView = config.viewTicketsRoleId && ctx.member.roles.cache.has(config.viewTicketsRoleId);
+  if (!hasMmRole && !canView && !hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need the Middleman role to claim a ticket.' });
   const user = ctx.isSlash ? ctx.interaction.user : ctx.message.author;
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setTitle('✅ Ticket Claimed').setDescription(`Claimed by <@${user.id}>. They will assist you shortly.`).setThumbnail(user.displayAvatarURL()).setTimestamp()] });
 }
 async function runUnclaim(ctx) {
   const hasMmRole = config.mmRoleId && ctx.member.roles.cache.has(config.mmRoleId);
-  if (!hasMmRole && !hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need the Middleman role to unclaim.' });
+  const canView = config.viewTicketsRoleId && ctx.member.roles.cache.has(config.viewTicketsRoleId);
+  if (!hasMmRole && !canView && !hasManageGuild(ctx)) return reply(ctx, { content: '❌ You need the Middleman role to unclaim.' });
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.red).setDescription(`🔓 Ticket unclaimed by **${ctx.member.user.tag}**`)] });
 }
 async function runTranscript(ctx) {
@@ -1853,13 +1880,23 @@ async function runVouch(ctx) {
   if (!config.vouchData[target.id]) config.vouchData[target.id] = 0;
   config.vouchData[target.id]++;
   saveConfig(config);
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setTitle('✅ Vouch Added').setThumbnail(target.displayAvatarURL()).addFields({ name: '👤 User', value: `<@${target.id}>`, inline: true }, { name: '⭐ Total', value: `**${config.vouchData[target.id]}**`, inline: true }, { name: '✍️ By', value: `<@${author.id}>`, inline: true })] });
+  const stars = '⭐'.repeat(Math.min(config.vouchData[target.id], 10));
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.gold).setTitle('✅ Vouch Added').setThumbnail(target.displayAvatarURL()).addFields(
+    { name: '👤 User', value: `<@${target.id}>`, inline: true },
+    { name: '⭐ Total', value: `**${config.vouchData[target.id]}**`, inline: true },
+    { name: 'Rating', value: stars || '⭐', inline: true },
+    { name: '✍️ By', value: `<@${author.id}>`, inline: true }
+  )] });
 }
 async function runVouches(ctx) {
   const target = ctx.isSlash ? (ctx.getUserOption('user') || ctx.interaction.user) : (ctx.message.mentions.users.first() || ctx.message.author);
   config = loadConfig();
   const count = config.vouchData?.[target.id] || 0;
-  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.orange).setTitle(`📋 Vouches — ${target.username}`).setThumbnail(target.displayAvatarURL()).addFields({ name: '⭐ Count', value: `**${count}**`, inline: true }, { name: 'Rating', value: '⭐'.repeat(Math.min(count, 10)) || '*No vouches yet*', inline: true })] });
+  const stars = '⭐'.repeat(Math.min(count, 10)) || '*No vouches yet*';
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.gold).setTitle(`📋 Vouches — ${target.username}`).setThumbnail(target.displayAvatarURL()).addFields(
+    { name: '⭐ Count', value: `**${count}**`, inline: true },
+    { name: 'Rating', value: stars, inline: true }
+  )] });
 }
 async function runSetVouches(ctx) {
   if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ Manage Server only.' });
@@ -1902,20 +1939,28 @@ async function restoreRoles(guild, userId, channel) {
 
 // Moderation
 async function runBan(ctx) {
-  if (!ctx.member.permissions.has(PermissionsBitField.Flags.BanMembers)) return reply(ctx, { content: '❌ Ban Members permission required.' });
+  config = loadConfig();
+  const modRoleId = config.modRoleIds?.ban;
+  const hasModRole = modRoleId && ctx.member.roles.cache.has(modRoleId);
+  if (!ctx.member.permissions.has(PermissionsBitField.Flags.BanMembers) && !hasModRole && !hasAdmin(ctx)) return reply(ctx, { content: '❌ Ban Members permission or mod role required.' });
   const target = ctx.isSlash ? ctx.getMemberOption('user') : ctx.message.mentions.members.first();
   const reason = (ctx.isSlash ? ctx.getOption('reason') : ctx.args.slice(1).join(' ')) || 'No reason provided';
   if (!target) return reply(ctx, { content: '❌ Please mention a user.' });
   if (!target.bannable) return reply(ctx, { content: '❌ I cannot ban this user.' });
+  if (checkBanKickSpam(ctx.member.id)) return reply(ctx, { content: '⚠️ Slow down! You are banning/kicking too fast.' });
   await target.ban({ reason });
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.red).setTitle('🔨 User Banned').setThumbnail(target.user.displayAvatarURL()).addFields({ name: '👤 User', value: target.user.tag, inline: true }, { name: '📋 Reason', value: reason, inline: true })] });
 }
 async function runKick(ctx) {
-  if (!ctx.member.permissions.has(PermissionsBitField.Flags.KickMembers)) return reply(ctx, { content: '❌ Kick Members permission required.' });
+  config = loadConfig();
+  const modRoleId = config.modRoleIds?.kick;
+  const hasModRole = modRoleId && ctx.member.roles.cache.has(modRoleId);
+  if (!ctx.member.permissions.has(PermissionsBitField.Flags.KickMembers) && !hasModRole && !hasAdmin(ctx)) return reply(ctx, { content: '❌ Kick Members permission or mod role required.' });
   const target = ctx.isSlash ? ctx.getMemberOption('user') : ctx.message.mentions.members.first();
   const reason = (ctx.isSlash ? ctx.getOption('reason') : ctx.args.slice(1).join(' ')) || 'No reason provided';
   if (!target) return reply(ctx, { content: '❌ Please mention a user.' });
   if (!target.kickable) return reply(ctx, { content: '❌ I cannot kick this user.' });
+  if (checkBanKickSpam(ctx.member.id)) return reply(ctx, { content: '⚠️ Slow down! You are banning/kicking too fast.' });
   await target.kick(reason);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.yellow).setTitle('👢 User Kicked').setThumbnail(target.user.displayAvatarURL()).addFields({ name: '👤 User', value: target.user.tag, inline: true }, { name: '📋 Reason', value: reason, inline: true })] });
 }
@@ -1926,7 +1971,7 @@ async function runMute(ctx) {
   const reason = (ctx.isSlash ? ctx.getOption('reason') : ctx.args.slice(2).join(' ')) || 'No reason provided';
   if (!target) return reply(ctx, { content: '❌ Please mention a user.' });
   const ms = parseDuration(durStr);
-  if (!ms) return reply(ctx, { content: '❌ Invalid duration.' });
+  if (!ms) return reply(ctx, { content: '❌ Invalid duration. Use: `10m`, `1h`, `1d`' });
   if (ms > 2419200000) return reply(ctx, { content: '❌ Max timeout is 28 days.' });
   await target.timeout(ms, reason);
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.yellow).setTitle('🔇 User Timed Out').setThumbnail(target.user.displayAvatarURL()).addFields({ name: '👤 User', value: target.user.tag, inline: true }, { name: '⏱️ Duration', value: formatDuration(ms), inline: true }, { name: '📋 Reason', value: reason, inline: true })] });
@@ -2042,7 +2087,10 @@ async function runGiveaway(ctx) {
   }, ms);
 }
 async function runRole(ctx) {
-  if (!ctx.member.permissions.has(PermissionsBitField.Flags.ManageRoles)) return reply(ctx, { content: '❌ Manage Roles permission required.' });
+  config = loadConfig();
+  const modRoleId = config.modRoleIds?.roleadd;
+  const hasModRole = modRoleId && ctx.member.roles.cache.has(modRoleId);
+  if (!ctx.member.permissions.has(PermissionsBitField.Flags.ManageRoles) && !hasModRole && !hasAdmin(ctx)) return reply(ctx, { content: '❌ Manage Roles permission or mod role required.' });
   const target = ctx.isSlash ? ctx.getMemberOption('user') : ctx.message.mentions.members.first();
   const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
   if (!target || !role) return reply(ctx, { content: '❌ Please mention a user and a role.' });
@@ -2116,9 +2164,9 @@ async function runFill(ctx) {
   else await statusMsg.edit({ content: '', embeds: [embed] });
 }
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // GAMBLING
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function runBalance(ctx) {
   const target = ctx.isSlash ? (ctx.getUserOption('user') || ctx.interaction.user) : (ctx.message.mentions.users.first() || ctx.message.author);
   const bal = getBalance(target.id);
@@ -2208,9 +2256,418 @@ async function runSetCoins(ctx) {
   await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Set **${target.tag}**'s coins to **${amount.toLocaleString()}**.`)] });
 }
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// CRYPTO COMMANDS
+// ═══════════════════════════════════════════════════════════════
+const CRYPTO_IDS = { btc: 'bitcoin', eth: 'ethereum', ltc: 'litecoin', sol: 'solana', usdt: 'tether', usdc: 'usd-coin' };
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'Accept': 'application/json' } }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+    }).on('error', reject);
+  });
+}
+
+async function runCryptoPrice(ctx) {
+  const coin = ctx.isSlash ? ctx.interaction.commandName : ctx.args[0];
+  const id = CRYPTO_IDS[coin];
+  if (!id) return reply(ctx, { content: '❌ Unsupported coin.' });
+  try {
+    const data = await fetchJson(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`);
+    const price = data[id]?.usd;
+    const change = data[id]?.usd_24h_change;
+    if (!price) return reply(ctx, { content: '❌ Could not fetch price.' });
+    const changeStr = change !== undefined ? (change >= 0 ? `📈 +${change.toFixed(2)}%` : `📉 ${change.toFixed(2)}%`) : '';
+    const embed = new EmbedBuilder().setColor(COLORS.crypto).setTitle(`💎 ${coin.toUpperCase()} Price`).addFields(
+      { name: '💵 Price', value: `$${price.toLocaleString()}`, inline: true },
+      { name: '📊 24h Change', value: changeStr || 'N/A', inline: true },
+    ).setFooter({ text: 'Powered by CoinGecko' }).setTimestamp();
+    const msg = await reply(ctx, { embeds: [embed] });
+    if (!ctx.isSlash && msg) setTimeout(() => msg.delete().catch(()=>{}), 300000);
+  } catch (e) { reply(ctx, { content: '❌ Failed to fetch price. Try again later.' }); }
+}
+
+async function runWalletBal(ctx) {
+  const address = ctx.isSlash ? ctx.getOption('address') : ctx.args[0];
+  if (!address) return reply(ctx, { content: '❌ Please provide a wallet address.' });
+  // Simple ETH/BSC balance check via Etherscan-style (using blockcypher for BTC, etc would need API keys)
+  // For now, show a clean embed with the address
+  const embed = new EmbedBuilder().setColor(COLORS.crypto).setTitle('💳 Wallet Lookup')
+    .setDescription(`**Address:** \`${address}\`\n\n🔗 [View on Etherscan](https://etherscan.io/address/${address})\n🔗 [View on BscScan](https://bscscan.com/address/${address})\n🔗 [View on Solscan](https://solscan.io/account/${address})`)
+    .setFooter({ text: 'Use block explorers for full balance details' });
+  const msg = await reply(ctx, { embeds: [embed] });
+  if (!ctx.isSlash && msg) setTimeout(() => msg.delete().catch(()=>{}), 300000);
+}
+
+async function runSetAddy(ctx) {
+  const coin = (ctx.isSlash ? ctx.getOption('coin') : ctx.args[0])?.toLowerCase();
+  const address = ctx.isSlash ? ctx.getOption('address') : ctx.args[1];
+  if (!coin || !address || !CRYPTO_IDS[coin]) return reply(ctx, { content: '❌ Usage: `setaddy <btc/eth/ltc/sol/usdt/usdc> <address>`' });
+  const userId = ctx.isSlash ? ctx.interaction.user.id : ctx.message.author.id;
+  config = loadConfig();
+  if (!config.cryptoAddresses[userId]) config.cryptoAddresses[userId] = {};
+  config.cryptoAddresses[userId][coin] = address;
+  saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.crypto).setDescription(`✅ Saved **${coin.toUpperCase()}** address.`)] });
+}
+
+async function runAddy(ctx) {
+  const userId = ctx.isSlash ? ctx.interaction.user.id : ctx.message.author.id;
+  config = loadConfig();
+  const addys = config.cryptoAddresses?.[userId];
+  if (!addys || Object.keys(addys).length === 0) return reply(ctx, { content: '❌ No saved wallets. Use `$setaddy` first.' });
+  const embed = new EmbedBuilder().setColor(COLORS.crypto).setTitle('💼 Your Wallets');
+  for (const [coin, addr] of Object.entries(addys)) {
+    embed.addFields({ name: coin.toUpperCase(), value: `\`${addr}\``, inline: true });
+  }
+  await reply(ctx, { embeds: [embed] });
+}
+
+async function runMyBal(ctx) {
+  const userId = ctx.isSlash ? ctx.interaction.user.id : ctx.message.author.id;
+  config = loadConfig();
+  const addys = config.cryptoAddresses?.[userId];
+  if (!addys || Object.keys(addys).length === 0) return reply(ctx, { content: '❌ No saved wallets. Use `$setaddy` first.' });
+  const embed = new EmbedBuilder().setColor(COLORS.crypto).setTitle('💰 Your Saved Balances');
+  for (const [coin, addr] of Object.entries(addys)) {
+    let explorer = '';
+    if (coin === 'btc') explorer = `https://www.blockchain.com/explorer/addresses/btc/${addr}`;
+    else if (coin === 'eth' || coin === 'usdt' || coin === 'usdc') explorer = `https://etherscan.io/address/${addr}`;
+    else if (coin === 'ltc') explorer = `https://blockchair.com/litecoin/address/${addr}`;
+    else if (coin === 'sol') explorer = `https://solscan.io/account/${addr}`;
+    embed.addFields({ name: `${coin.toUpperCase()}`, value: `\`${addr}\`\n[View Balance](${explorer})`, inline: true });
+  }
+  await reply(ctx, { embeds: [embed] });
+}
+
+async function runSearch(ctx) {
+  const target = ctx.isSlash ? ctx.getUserOption('user') : ctx.message.mentions.users.first();
+  if (!target) return reply(ctx, { content: '❌ Please mention a user.' });
+  config = loadConfig();
+  const addys = config.cryptoAddresses?.[target.id];
+  if (!addys || Object.keys(addys).length === 0) return reply(ctx, { content: `❌ **${target.tag}** has no saved wallets.` });
+  const embed = new EmbedBuilder().setColor(COLORS.crypto).setTitle(`💼 ${target.username}'s Wallets`).setThumbnail(target.displayAvatarURL());
+  for (const [coin, addr] of Object.entries(addys)) {
+    embed.addFields({ name: coin.toUpperCase(), value: `\`${addr}\``, inline: true });
+  }
+  await reply(ctx, { embeds: [embed] });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ESCROW SYSTEM
+// ═══════════════════════════════════════════════════════════════
+async function runEscrowPanel(ctx) {
+  if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ Manage Server only.', ephemeral: true });
+  const embed = new EmbedBuilder().setColor(COLORS.crypto).setTitle('🔒 Crypto Escrow')
+    .setDescription('Select a cryptocurrency to start an escrow deal.\n\n**Supported:** BTC, ETH, LTC, SOL, USDT, USDC\n\nThe bot will track the deal status for both buyer and seller.')
+    .setFooter({ text: 'Automated Escrow System' });
+  const row = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder().setCustomId('escrow_coin_select').setPlaceholder('Select coin...').addOptions(
+      { label: 'Bitcoin', value: 'btc', emoji: '₿' },
+      { label: 'Ethereum', value: 'eth', emoji: 'Ξ' },
+      { label: 'Litecoin', value: 'ltc', emoji: 'Ł' },
+      { label: 'Solana', value: 'sol', emoji: '◎' },
+      { label: 'USDT', value: 'usdt', emoji: '💵' },
+      { label: 'USDC', value: 'usdc', emoji: '💵' },
+    )
+  );
+  const channel = ctx.isSlash ? ctx.interaction.channel : ctx.channel;
+  await channel.send({ embeds: [embed], components: [row] });
+  if (ctx.isSlash) await ctx.interaction.reply({ content: '✅ Escrow panel sent!', ephemeral: true });
+  else await ctx.message.reply('✅ Escrow panel sent!');
+}
+
+async function createEscrow(interaction) {
+  const coin = interaction.customId.replace('escrow_modal_', '');
+  const amount = interaction.fields.getTextInputValue('escrow_amount');
+  const buyerInput = interaction.fields.getTextInputValue('escrow_buyer');
+  const sellerInput = interaction.fields.getTextInputValue('escrow_seller');
+  const item = interaction.fields.getTextInputValue('escrow_item');
+
+  const buyerMatch = buyerInput.match(/^<@!?(\d+)>$/) || buyerInput.match(/^(\d+)$/);
+  const sellerMatch = sellerInput.match(/^<@!?(\d+)>$/) || sellerInput.match(/^(\d+)$/);
+  const buyerId = buyerMatch ? buyerMatch[1] : null;
+  const sellerId = sellerMatch ? sellerMatch[1] : null;
+
+  if (!buyerId || !sellerId) return interaction.editReply({ content: '❌ Invalid buyer or seller ID.' });
+
+  const escrowId = `escrow-${Date.now()}`;
+  config = loadConfig();
+  config.escrowData[escrowId] = {
+    coin, amount, buyerId, sellerId, item,
+    status: 'pending', createdAt: Date.now(), guildId: interaction.guild.id,
+    buyerConfirmed: false, sellerConfirmed: false,
+  };
+  saveConfig(config);
+
+  const embed = new EmbedBuilder().setColor(COLORS.crypto).setTitle(`🔒 Escrow Deal — ${coin.toUpperCase()}`)
+    .setDescription(`**Item:** ${item}\n**Amount:** ${amount} ${coin.toUpperCase()}`)
+    .addFields(
+      { name: '👤 Buyer', value: `<@${buyerId}>`, inline: true },
+      { name: '👤 Seller', value: `<@${sellerId}>`, inline: true },
+      { name: '⏳ Status', value: 'Pending confirmation from both parties', inline: true },
+    )
+    .setFooter({ text: `Escrow ID: ${escrowId}` }).setTimestamp();
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`escrow_buyer_confirm_${escrowId}`).setLabel('✅ Buyer Confirm').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`escrow_seller_confirm_${escrowId}`).setLabel('✅ Seller Confirm').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`escrow_cancel_${escrowId}`).setLabel('❌ Cancel').setStyle(ButtonStyle.Danger),
+  );
+
+  await interaction.editReply({ content: `🔒 Escrow created!`, embeds: [embed], components: [row] });
+}
+
+async function handleEscrowButton(interaction) {
+  const parts = interaction.customId.split('_');
+  const action = parts[1];
+  const escrowId = parts[2];
+  config = loadConfig();
+  const escrow = config.escrowData?.[escrowId];
+  if (!escrow) return interaction.reply({ content: '❌ Escrow not found.', ephemeral: true });
+
+  if (action === 'cancel') {
+    if (interaction.user.id !== escrow.buyerId && interaction.user.id !== escrow.sellerId && !hasAdmin({ member: interaction.member })) {
+      return interaction.reply({ content: '❌ Only buyer, seller, or admin can cancel.', ephemeral: true });
+    }
+    escrow.status = 'cancelled';
+    saveConfig(config);
+    const disabledRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('done').setLabel('❌ Cancelled').setStyle(ButtonStyle.Danger).setDisabled(true),
+    );
+    await interaction.update({ components: [disabledRow] });
+    return interaction.channel.send({ embeds: [new EmbedBuilder().setColor(COLORS.red).setDescription(`❌ Escrow **${escrowId}** has been cancelled.`)] });
+  }
+
+  if (action === 'buyer' && parts[2] === 'confirm') {
+    if (interaction.user.id !== escrow.buyerId) return interaction.reply({ content: '❌ Only the buyer can confirm.', ephemeral: true });
+    escrow.buyerConfirmed = true;
+  } else if (action === 'seller' && parts[2] === 'confirm') {
+    if (interaction.user.id !== escrow.sellerId) return interaction.reply({ content: '❌ Only the seller can confirm.', ephemeral: true });
+    escrow.sellerConfirmed = true;
+  }
+
+  saveConfig(config);
+
+  if (escrow.buyerConfirmed && escrow.sellerConfirmed) {
+    escrow.status = 'confirmed';
+    saveConfig(config);
+    const disabledRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('done').setLabel('✅ Both Confirmed').setStyle(ButtonStyle.Success).setDisabled(true),
+    );
+    await interaction.update({ components: [disabledRow] });
+    return interaction.channel.send({ embeds: [new EmbedBuilder().setColor(COLORS.green).setTitle('🔒 Escrow Confirmed').setDescription(`Both parties have confirmed the escrow deal.\n\n**Item:** ${escrow.item}\n**Amount:** ${escrow.amount} ${escrow.coin.toUpperCase()}\n\nProceed with the transaction safely!`)] });
+  }
+
+  await interaction.reply({ content: `✅ Your confirmation has been recorded. Waiting for the other party...`, ephemeral: true });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NEW FUN COMMANDS
+// ═══════════════════════════════════════════════════════════════
+async function runCoinFlip(ctx) {
+  const result = Math.random() < 0.5 ? 'Heads' : 'Tails';
+  const emoji = result === 'Heads' ? '🟡' : '⚪';
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.gold).setTitle(`🪙 ${emoji} ${result}!`).setDescription(`The coin landed on **${result}**!`)] });
+}
+
+async function runDice(ctx) {
+  const rollStr = ctx.isSlash ? ctx.getOption('roll') : ctx.args[0];
+  if (!rollStr || !rollStr.match(/^\d+d\d+$/i)) return reply(ctx, { content: '❌ Usage: `dice 2d6` or `dice 3d20`' });
+  const [count, sides] = rollStr.toLowerCase().split('d').map(Number);
+  if (count > 100 || sides > 1000) return reply(ctx, { content: '❌ Max 100 dice, 1000 sides.' });
+  const rolls = [];
+  let total = 0;
+  for (let i = 0; i < count; i++) { const r = Math.floor(Math.random() * sides) + 1; rolls.push(r); total += r; }
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.purple).setTitle(`🎲 ${rollStr}`).setDescription(`**Rolls:** ${rolls.join(', ')}\n**Total:** **${total}**`)] });
+}
+
+const EIGHT_BALL = ['It is certain.', 'It is decidedly so.', 'Without a doubt.', 'Yes definitely.', 'You may rely on it.', 'As I see it, yes.', 'Most likely.', 'Outlook good.', 'Yes.', 'Signs point to yes.', 'Reply hazy, try again.', 'Ask again later.', 'Better not tell you now.', 'Cannot predict now.', 'Concentrate and ask again.', 'Don\'t count on it.', 'My reply is no.', 'My sources say no.', 'Outlook not so good.', 'Very doubtful.'];
+async function run8Ball(ctx) {
+  const q = ctx.isSlash ? ctx.getOption('question') : ctx.args.join(' ');
+  if (!q) return reply(ctx, { content: '❌ Ask a question!' });
+  const answer = EIGHT_BALL[Math.floor(Math.random() * EIGHT_BALL.length)];
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.purple).setTitle('🎱 Magic 8-Ball').addFields({ name: 'Question', value: q }, { name: 'Answer', value: `**${answer}**` })] });
+}
+
+const ROASTS = [
+  'You bring everyone so much joy... when you leave the room.',
+  'I\'d agree with you but then we\'d both be wrong.',
+  'You\'re like a cloud. When you disappear, it\'s a beautiful day.',
+  'I\'m not saying I hate you, but I would unplug your life support to charge my phone.',
+  'You\'re the reason the gene pool needs a lifeguard.',
+  'I\'d explain it to you but I left my crayons at home.',
+  'You\'re not stupid; you just have bad luck thinking.',
+  'I\'d roast you but my mom said I\'m not allowed to burn trash.',
+];
+async function runRoast(ctx) {
+  const target = ctx.isSlash ? ctx.getUserOption('user') : ctx.message.mentions.users.first();
+  if (!target) return reply(ctx, { content: '❌ Mention someone to roast!' });
+  const roast = ROASTS[Math.floor(Math.random() * ROASTS.length)];
+  await reply(ctx, { content: `<@${target.id}> ${roast}` });
+}
+
+async function runDih(ctx) {
+  const answers = ['Yes, absolutely.', 'No, definitely not.', 'Maybe...', 'Ask again later.', 'I doubt it.', '100% yes!', 'Not a chance.', 'Probably.'];
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.pink).setTitle('🤔 Do I Have?').setDescription(`**${answers[Math.floor(Math.random() * answers.length)]}**`)] });
+}
+
+async function runSteal(ctx) {
+  if (!hasManageGuild(ctx)) return reply(ctx, { content: '❌ Manage Server only.' });
+  const emojiStr = ctx.isSlash ? ctx.getOption('emoji') : ctx.args[0];
+  if (!emojiStr) return reply(ctx, { content: '❌ Provide an emoji to steal!' });
+  const match = emojiStr.match(/<a?:(\w+):(\d+)>/);
+  if (!match) return reply(ctx, { content: '❌ Invalid emoji format. Use a custom emoji.' });
+  const [, name, id] = match;
+  const isAnimated = emojiStr.startsWith('<a:');
+  const url = `https://cdn.discordapp.com/emojis/${id}.${isAnimated ? 'gif' : 'png'}`;
+  try {
+    const newEmoji = await ctx.guild.emojis.create({ attachment: url, name });
+    await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Stolen emoji: ${newEmoji}`)] });
+  } catch (e) { reply(ctx, { content: '❌ Could not steal emoji. Check emoji slots and permissions.' }); }
+}
+
+async function runWhoPinged(ctx) {
+  const userId = ctx.isSlash ? ctx.interaction.user.id : ctx.message.author.id;
+  const pings = pingHistory.get(userId);
+  if (!pings || pings.length === 0) return reply(ctx, { content: '❌ No one has pinged you recently.' });
+  const recent = pings.slice(-5).reverse().map(p => `• <@${p.pinger}> in <#${p.channel}> — ${formatTimeAgo(p.time)}`).join('\n');
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.cyan).setTitle('🔔 Recent Pings').setDescription(recent)] });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROMOTE / DEMOTE
+// ═══════════════════════════════════════════════════════════════
+async function runPromote(ctx) {
+  config = loadConfig();
+  const minRole = config.promoteMinRoleId ? ctx.guild.roles.cache.get(config.promoteMinRoleId) : null;
+  if (minRole && ctx.member.roles.highest.position < minRole.position && !hasAdmin(ctx)) return reply(ctx, { content: `❌ You need **${minRole.name}** or higher.` });
+  if (!ctx.member.permissions.has(PermissionsBitField.Flags.ManageRoles) && !hasAdmin(ctx)) return reply(ctx, { content: '❌ Manage Roles permission required.' });
+  const target = ctx.isSlash ? ctx.getMemberOption('user') : ctx.message.mentions.members.first();
+  const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
+  const reason = (ctx.isSlash ? ctx.getOption('reason') : ctx.args.slice(2).join(' ')) || 'No reason';
+  if (!target || !role) return reply(ctx, { content: '❌ Mention a user and a role.' });
+  await target.roles.add(role);
+  const embed = new EmbedBuilder().setColor(COLORS.green).setTitle('📈 Promoted').setDescription(`**${target.user.tag}** has been promoted to **${role.name}**.\n📋 Reason: ${reason}`);
+  await reply(ctx, { embeds: [embed] });
+  if (config.promoteLogChannelId) {
+    const logCh = ctx.guild.channels.cache.get(config.promoteLogChannelId);
+    if (logCh) logCh.send({ embeds: [embed.setFooter({ text: `By: ${ctx.member.user.tag}` }).setTimestamp()] });
+  }
+}
+
+async function runDemote(ctx) {
+  config = loadConfig();
+  const minRole = config.promoteMinRoleId ? ctx.guild.roles.cache.get(config.promoteMinRoleId) : null;
+  if (minRole && ctx.member.roles.highest.position < minRole.position && !hasAdmin(ctx)) return reply(ctx, { content: `❌ You need **${minRole.name}** or higher.` });
+  if (!ctx.member.permissions.has(PermissionsBitField.Flags.ManageRoles) && !hasAdmin(ctx)) return reply(ctx, { content: '❌ Manage Roles permission required.' });
+  const target = ctx.isSlash ? ctx.getMemberOption('user') : ctx.message.mentions.members.first();
+  const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
+  const reason = (ctx.isSlash ? ctx.getOption('reason') : ctx.args.slice(2).join(' ')) || 'No reason';
+  if (!target || !role) return reply(ctx, { content: '❌ Mention a user and a role.' });
+  await target.roles.remove(role);
+  const embed = new EmbedBuilder().setColor(COLORS.red).setTitle('📉 Demoted').setDescription(`**${target.user.tag}** has been demoted from **${role.name}**.\n📋 Reason: ${reason}`);
+  await reply(ctx, { embeds: [embed] });
+  if (config.promoteLogChannelId) {
+    const logCh = ctx.guild.channels.cache.get(config.promoteLogChannelId);
+    if (logCh) logCh.send({ embeds: [embed.setFooter({ text: `By: ${ctx.member.user.tag}` }).setTimestamp()] });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// REVAMP
+// ═══════════════════════════════════════════════════════════════
+async function runRevamp(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.' });
+  const type = (ctx.isSlash ? ctx.getOption('type') : ctx.args[0])?.toLowerCase();
+  const value = ctx.isSlash ? ctx.getOption('value') : ctx.args.slice(1).join(' ');
+  if (!type || !value) return reply(ctx, { content: '❌ Usage: `revamp <botname/boticon/botbanner/servername/servericon> <value>`' });
+  try {
+    if (type === 'botname') { await client.user.setUsername(value); return reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Bot name changed to **${value}**`)] }); }
+    if (type === 'boticon') { await client.user.setAvatar(value); return reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Bot icon updated!')] }); }
+    if (type === 'botbanner') { await client.user.setBanner(value); return reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Bot banner updated!')] }); }
+    if (type === 'servername') { await ctx.guild.setName(value); return reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Server name changed to **${value}**`)] }); }
+    if (type === 'servericon') { await ctx.guild.setIcon(value); return reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription('✅ Server icon updated!')] }); }
+    return reply(ctx, { content: '❌ Invalid type. Use: botname, boticon, botbanner, servername, servericon' });
+  } catch (e) { reply(ctx, { content: `❌ Failed: ${e.message}` }); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════
+async function runSettings(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
+  const setting = (ctx.isSlash ? ctx.getOption('setting') : ctx.args[0])?.toLowerCase();
+  const value = (ctx.isSlash ? ctx.getOption('value') : ctx.args[1])?.toLowerCase();
+  if (!setting || !value) return reply(ctx, { content: '❌ Usage: `settings <ticketmode/spam/bankick/autovouch> <value>`', ephemeral: true });
+  config = loadConfig();
+  if (setting === 'ticketmode') {
+    if (!['channel', 'thread'].includes(value)) return reply(ctx, { content: '❌ Value must be `channel` or `thread`.', ephemeral: true });
+    config.ticketMode = value;
+    saveConfig(config);
+    return reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Ticket mode set to **${value}**.`)] });
+  }
+  if (setting === 'spam') {
+    config.spamProtection = value === 'on' || value === 'true';
+    saveConfig(config);
+    return reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Spam protection **${config.spamProtection ? 'enabled' : 'disabled'}**.`)] });
+  }
+  if (setting === 'bankick') {
+    config.banKickProtection = value === 'on' || value === 'true';
+    saveConfig(config);
+    return reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Ban/kick protection **${config.banKickProtection ? 'enabled' : 'disabled'}**.`)] });
+  }
+  if (setting === 'autovouch') {
+    config.autoVouchEnabled = value === 'on' || value === 'true';
+    saveConfig(config);
+    return reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Auto-vouch on join **${config.autoVouchEnabled ? 'enabled' : 'disabled'}**.`)] });
+  }
+  return reply(ctx, { content: '❌ Unknown setting.', ephemeral: true });
+}
+
+async function runSetModRole(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
+  const cmd = (ctx.isSlash ? ctx.getOption('command') : ctx.args[0])?.toLowerCase();
+  const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
+  if (!['ban', 'kick', 'roleadd'].includes(cmd)) return reply(ctx, { content: '❌ Command must be ban, kick, or roleadd.', ephemeral: true });
+  if (!role) return reply(ctx, { content: '❌ Mention a role.', ephemeral: true });
+  config = loadConfig();
+  if (!config.modRoleIds) config.modRoleIds = {};
+  config.modRoleIds[cmd] = role.id;
+  saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ **${cmd}** mod role set to **${role.name}**.`)] });
+}
+
+async function runSetViewTickets(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
+  const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
+  if (!role) return reply(ctx, { content: '❌ Mention a role.', ephemeral: true });
+  config = loadConfig(); config.viewTicketsRoleId = role.id; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ View tickets role set to **${role.name}**.`)] });
+}
+
+async function runSetPromoteMinRole(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
+  const role = ctx.isSlash ? ctx.getRoleOption('role') : ctx.message.mentions.roles.first();
+  if (!role) return reply(ctx, { content: '❌ Mention a role.', ephemeral: true });
+  config = loadConfig(); config.promoteMinRoleId = role.id; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Promote/demote minimum role set to **${role.name}**.`)] });
+}
+
+async function runSetPromoteLog(ctx) {
+  if (!hasAdmin(ctx)) return reply(ctx, { content: '❌ Administrator only.', ephemeral: true });
+  const ch = ctx.isSlash ? ctx.getChannelOption('channel') : ctx.message.mentions.channels.first();
+  if (!ch) return reply(ctx, { content: '❌ Mention a channel.', ephemeral: true });
+  config = loadConfig(); config.promoteLogChannelId = ch.id; saveConfig(config);
+  await reply(ctx, { embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(`✅ Promote/demote log channel set to <#${ch.id}>.`)] });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // TICKET CREATION — TRADING
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function createTradingTicket(interaction) {
   config = loadConfig();
   const guild = interaction.guild;
@@ -2224,7 +2681,8 @@ async function createTradingTicket(interaction) {
   if (mentionMatch) tradingWithMember = await guild.members.fetch(mentionMatch[1]).catch(() => null);
   else tradingWithMember = guild.members.cache.find(m => m.user.username.toLowerCase() === tradingWith.toLowerCase() || m.displayName.toLowerCase() === tradingWith.toLowerCase()) || null;
 
-  const channelName = `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20)}-${Date.now().toString().slice(-4)}`;
+  const ticketName = `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20)}`;
+
   let ticketChannel;
   try {
     const overwrites = [
@@ -2233,12 +2691,25 @@ async function createTradingTicket(interaction) {
       { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ReadMessageHistory] },
     ];
     if (config.mmRoleId) overwrites.push({ id: config.mmRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
+    if (config.supportRoleId) overwrites.push({ id: config.supportRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
     if (tradingWithMember) overwrites.push({ id: tradingWithMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
-    const opts = { name: channelName, type: ChannelType.GuildText, permissionOverwrites: overwrites };
-    if (config.ticketCategoryId) opts.parent = config.ticketCategoryId;
-    ticketChannel = await guild.channels.create(opts);
+
+    if (config.ticketMode === 'thread') {
+      const parentChannel = interaction.channel;
+      if (parentChannel.type !== ChannelType.GuildText) return interaction.editReply({ content: '❌ Threads can only be created in text channels.' });
+      ticketChannel = await parentChannel.threads.create({ name: ticketName, type: ChannelType.PrivateThread });
+      for (const ow of overwrites) {
+        if (ow.id === guild.id) continue;
+        const member = await guild.members.fetch(ow.id).catch(() => null);
+        if (member) await ticketChannel.members.add(member.id);
+      }
+    } else {
+      const opts = { name: `${ticketName}-${Date.now().toString().slice(-4)}`, type: ChannelType.GuildText, permissionOverwrites: overwrites };
+      if (config.ticketCategoryId) opts.parent = config.ticketCategoryId;
+      ticketChannel = await guild.channels.create(opts);
+    }
   } catch (e) {
-    return interaction.editReply({ content: '❌ Could not create ticket channel. Check my **Manage Channels** permission.' });
+    return interaction.editReply({ content: '❌ Could not create ticket. Check my permissions.' });
   }
 
   const typeLabel = isIngame ? '🎮 Ingame Trading' : '💳 PayPal/Cashapp/Crypto';
@@ -2272,15 +2743,15 @@ async function createTradingTicket(interaction) {
   await interaction.editReply({ content: `✅ Ticket created: ${ticketChannel}` });
 }
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // TICKET CREATION — SUPPORT
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function createSupportTicket(interaction, type, typeLabel) {
   config = loadConfig();
   const guild = interaction.guild;
   const user = interaction.user;
 
-  const channelName = `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20)}-${Date.now().toString().slice(-4)}`;
+  const ticketName = `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20)}`;
   let ticketChannel;
   try {
     const overwrites = [
@@ -2290,13 +2761,24 @@ async function createSupportTicket(interaction, type, typeLabel) {
     ];
     if (config.mmRoleId) overwrites.push({ id: config.mmRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
     if (config.supportRoleId) overwrites.push({ id: config.supportRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
-    const opts = { name: channelName, type: ChannelType.GuildText, permissionOverwrites: overwrites };
-    // Use supportCategoryId if set, otherwise fall back to ticketCategoryId
-    if (config.supportCategoryId) opts.parent = config.supportCategoryId;
-    else if (config.ticketCategoryId) opts.parent = config.ticketCategoryId;
-    ticketChannel = await guild.channels.create(opts);
+
+    if (config.ticketMode === 'thread') {
+      const parentChannel = interaction.channel;
+      if (parentChannel.type !== ChannelType.GuildText) return interaction.editReply({ content: '❌ Threads can only be created in text channels.' });
+      ticketChannel = await parentChannel.threads.create({ name: ticketName, type: ChannelType.PrivateThread });
+      for (const ow of overwrites) {
+        if (ow.id === guild.id) continue;
+        const member = await guild.members.fetch(ow.id).catch(() => null);
+        if (member) await ticketChannel.members.add(member.id);
+      }
+    } else {
+      const opts = { name: `${ticketName}-${Date.now().toString().slice(-4)}`, type: ChannelType.GuildText, permissionOverwrites: overwrites };
+      if (config.supportCategoryId) opts.parent = config.supportCategoryId;
+      else if (config.ticketCategoryId) opts.parent = config.ticketCategoryId;
+      ticketChannel = await guild.channels.create(opts);
+    }
   } catch (e) {
-    return interaction.editReply({ content: '❌ Could not create ticket channel. Check my **Manage Channels** permission.' });
+    return interaction.editReply({ content: '❌ Could not create ticket channel. Check my permissions.' });
   }
 
   const embed = new EmbedBuilder().setColor(COLORS.blue)
@@ -2323,98 +2805,9 @@ async function createSupportTicket(interaction, type, typeLabel) {
   await interaction.editReply({ content: `✅ Support ticket created: ${ticketChannel}` });
 }
 
-// ─────────────────────────────────────────────────────────────
-// TICKET CREATION — AI MIDDLEMAN
-// ─────────────────────────────────────────────────────────────
-async function createAITicket(interaction) {
-  config = loadConfig();
-  const guild = interaction.guild;
-  const user = interaction.user;
-
-  const channelName = `ai-ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16)}-${Date.now().toString().slice(-4)}`;
-  let ticketChannel;
-  try {
-    const overwrites = [
-      { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-      { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
-      { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ReadMessageHistory] },
-    ];
-    if (config.mmRoleId) overwrites.push({ id: config.mmRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
-    if (config.supportRoleId) overwrites.push({ id: config.supportRoleId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] });
-    const opts = { name: channelName, type: ChannelType.GuildText, permissionOverwrites: overwrites };
-    if (config.aiCategoryId) opts.parent = config.aiCategoryId;
-    else if (config.ticketCategoryId) opts.parent = config.ticketCategoryId;
-    ticketChannel = await guild.channels.create(opts);
-  } catch (e) {
-    return interaction.editReply({ content: '❌ Could not create AI ticket channel. Check my **Manage Channels** permission.' });
-  }
-
-  // Opening embed
-  const openEmbed = new EmbedBuilder()
-    .setColor(COLORS.ai)
-    .setTitle(config.aiTicketTitle || 'AI Middleman Ticket')
-    .setDescription(
-      `> 👋 Welcome, <@${user.id}>!\n` +
-      `> Your **AI Middleman** is ready to assist you.\n\n` +
-      `─────────────────────────\n` +
-      `📋 **To get started, please tell the AI:**\n` +
-      `• Who you are trading with (mention them or share their username)\n` +
-      `• What items/values are being traded\n` +
-      `• Your Roblox usernames\n\n` +
-      `The AI will guide you step-by-step through the trade process.\n\n` +
-      `💡 *Type your first message below to begin.*`
-    )
-    .addFields(
-      { name: '👤 Opened by', value: `<@${user.id}>`, inline: true },
-      { name: '📅 Opened At', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
-      { name: '🤖 AI Status', value: process.env.ANTHROPIC_API_KEY ? '✅ Online' : '⚠️ No API key set', inline: true },
-    )
-    .setThumbnail(user.displayAvatarURL({ size: 256 }))
-    .setFooter({ text: '🤖 AI Middleman • Roblox Values • Human staff can be requested anytime' })
-    .setTimestamp();
-
-  if (config.aiTicketImageUrl) openEmbed.setImage(config.aiTicketImageUrl);
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('close_ticket_btn').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger),
-  );
-
-  let ping = `<@${user.id}>`;
-  if (config.mmRoleId) ping += ` <@&${config.mmRoleId}>`;
-
-  await ticketChannel.send({ content: ping, embeds: [openEmbed], components: [row] });
-
-  // AI sends opening greeting
-  const systemPrompt = config.aiSystemPrompt || getDefaultAISystemPrompt();
-  const greeting = await callAI([{ role: 'user', content: `A new ticket was opened by ${user.username}. Please greet them and ask for their trade details.` }], systemPrompt);
-
-  if (greeting) {
-    const greetEmbed = new EmbedBuilder()
-      .setColor(COLORS.ai)
-      .setDescription(greeting)
-      .setFooter({ text: '🤖 AI Middleman • Roblox Values' });
-    await ticketChannel.send({ embeds: [greetEmbed] });
-
-    // Save greeting to history
-    aiTicketHistory.set(ticketChannel.id, [
-      { role: 'user', content: `New ticket opened by ${user.username}. Greet them.` },
-      { role: 'assistant', content: greeting },
-    ]);
-  } else {
-    // Fallback if no API key
-    const fallbackEmbed = new EmbedBuilder()
-      .setColor(COLORS.yellow)
-      .setDescription(`👋 Hello <@${user.id}>! Please describe your trade and I'll guide you through it.\n\n*(Note: AI responses require \`ANTHROPIC_API_KEY\` in your .env file)*`)
-      .setFooter({ text: '🤖 AI Middleman • Roblox Values' });
-    await ticketChannel.send({ embeds: [fallbackEmbed] });
-  }
-
-  await interaction.editReply({ content: `✅ AI Middleman ticket created: ${ticketChannel}` });
-}
-
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 // HELPERS
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
 async function reply(ctx, options) {
   try {
     if (ctx.isSlash) {
